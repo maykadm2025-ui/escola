@@ -9,14 +9,15 @@
     <style>
         :root {
             --primary: #4f46e5;
-            --accent: #f59e0b;
-            --danger: #ef4444;
+            --accent:  #f59e0b;
+            --danger:  #ef4444;
             --success: #10b981;
-            --bg: #f3f4f6;
+            --bg:      #f3f4f6;
         }
+        * { box-sizing: border-box; }
         body {
             font-family: 'Inter', system-ui, sans-serif;
-            background-color: var(--bg);
+            background: var(--bg);
             margin: 0;
             padding: 20px;
             display: flex;
@@ -30,6 +31,8 @@
             border-radius: 16px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.1);
         }
+
+        /* ── UPLOAD ── */
         .upload-section {
             border: 2px dashed #d1d5db;
             padding: 40px;
@@ -37,11 +40,14 @@
             text-align: center;
             cursor: pointer;
             margin-bottom: 20px;
-            transition: 0.3s;
-            display: none; 
+            transition: .3s;
+            display: none;
         }
         .upload-section:hover { border-color: var(--primary); background: #f9fafb; }
-        
+        .upload-section h3 { margin-top: 0; color: #374151; }
+        .upload-section p  { color: #6b7280; margin-bottom: 0; }
+
+        /* ── CONTROLES ── */
         .search-controls {
             position: sticky;
             top: 10px;
@@ -54,18 +60,18 @@
             display: none;
             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
         }
-        .input-row { display: flex; gap: 10px; }
+        .input-row { display: flex; gap: 10px; flex-wrap: wrap; }
         input[type="text"] {
             flex: 1;
+            min-width: 160px;
             padding: 12px;
             border: 2px solid #e5e7eb;
             border-radius: 8px;
             font-size: 16px;
             outline: none;
-            transition: 0.2s;
+            transition: .2s;
         }
         input[type="text"]:focus { border-color: var(--primary); }
-        
         button {
             padding: 12px 20px;
             border: none;
@@ -75,15 +81,17 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            transition: 0.2s;
+            transition: .2s;
+            font-size: 14px;
         }
-        button:active { transform: scale(0.98); }
-        .btn-main { background: var(--primary); color: white; }
+        button:active { transform: scale(.98); }
+        .btn-main  { background: var(--primary); color: white; }
         .btn-voice { background: #6b7280; color: white; }
         .btn-voice.recording { background: var(--danger); animation: pulse 1.5s infinite; }
-        .btn-nav { background: #f3f4f6; color: #374151; }
+        .btn-nav   { background: #f3f4f6; color: #374151; }
         .btn-clear { background: #fee2e2; color: #b91c1c; padding: 12px; }
 
+        /* ── STATUS ── */
         .status-bar {
             margin-top: 15px;
             display: flex;
@@ -91,6 +99,8 @@
             align-items: center;
             min-height: 40px;
             font-size: 14px;
+            flex-wrap: wrap;
+            gap: 8px;
         }
         .person-badge {
             background: #dcfce7;
@@ -101,317 +111,323 @@
             display: none;
         }
 
+        /* ── LOG ── */
+        #uploadLog {
+            margin-top: 12px;
+            background: #1e1e2e;
+            color: #cdd6f4;
+            font-family: monospace;
+            font-size: 13px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            display: none;
+            white-space: pre-wrap;
+            max-height: 140px;
+            overflow-y: auto;
+        }
+        #uploadLog .ok  { color: #a6e3a1; }
+        #uploadLog .err { color: #f38ba8; }
+        #uploadLog .inf { color: #89dceb; }
+
+        /* ── VIEWER ── */
         #viewer {
             background: white;
             border: 1px solid #e5e7eb;
             padding: 30px;
             border-radius: 8px;
-            line-height: 1.6;
+            line-height: 1.7;
             overflow-x: auto;
+            display: none;
         }
         table { border-collapse: collapse; width: 100%; margin: 15px 0; }
         td, th { border: 1px solid #d1d5db; padding: 10px; }
+        .match        { background: #fef08a; border-radius: 2px; }
+        .match.active { background: var(--accent); color: white; box-shadow: 0 0 8px rgba(245,158,11,.6); }
 
-        .match { background-color: #fef08a; border-radius: 2px; }
-        .match.active { background-color: var(--accent); color: white; box-shadow: 0 0 8px rgba(245, 158, 11, 0.6); }
-
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
     </style>
 </head>
 <body>
-
 <div class="app-container">
+
+    <!-- UPLOAD -->
     <div id="uploadArea" class="upload-section">
-        <h3 style="margin-top: 0;">Carregar Documento Word (.docx)</h3>
-        <p style="color: #6b7280; margin-bottom: 0;">O arquivo será salvo no Supabase e no seu navegador.</p>
-        <input type="file" id="fileInput" accept=".docx" style="display:none" />
+        <h3>Carregar Documento Word (.docx)</h3>
+        <p>Clique aqui para selecionar o arquivo.<br>Ele será salvo no Supabase e no navegador.</p>
+        <input type="file" id="fileInput" accept=".docx" style="display:none"/>
     </div>
 
+    <!-- CONTROLES DE BUSCA -->
     <div id="searchContainer" class="search-controls">
         <div class="input-row">
             <input type="text" id="searchInput" placeholder="Pesquise nomes, termos (ex: Heloísa, Caio)...">
             <button class="btn-voice" id="voiceBtn">🎤 Voz</button>
-            <button class="btn-main" id="btnSearch" onclick="performSearch()">Pesquisar</button>
-            <button class="btn-clear" onclick="clearFile()" title="Trocar Arquivo">🔄</button>
+            <button class="btn-main" onclick="performSearch()">🔍 Pesquisar</button>
+            <button class="btn-clear" onclick="clearFile()" title="Trocar arquivo">🔄</button>
         </div>
-        
         <div class="status-bar">
             <div>
-                <span id="counterText" style="font-weight: bold; color: #374151;"></span>
-                <span id="notFoundMsg" style="color:var(--danger); display:none; font-weight:bold;">⚠️ Nenhum resultado encontrado</span>
+                <span id="counterText" style="font-weight:bold;color:#374151;"></span>
+                <span id="notFoundMsg" style="color:var(--danger);display:none;font-weight:bold;">⚠️ Nenhum resultado encontrado</span>
             </div>
-            
-            <div id="navButtons" style="display:none; gap:5px;">
-                <button class="btn-nav" onclick="navigate(-1)">Anterior</button>
-                <button class="btn-nav" onclick="navigate(1)">Próximo</button>
+            <div id="navButtons" style="display:none;gap:5px;">
+                <button class="btn-nav" onclick="navigate(-1)">◀ Anterior</button>
+                <button class="btn-nav" onclick="navigate(1)">Próximo ▶</button>
             </div>
-            
             <div id="personBadge" class="person-badge">Pessoa: <span id="pName"></span></div>
         </div>
+        <!-- LOG VISUAL -->
+        <div id="uploadLog"></div>
     </div>
 
-    <div id="viewer" style="display:none"></div>
-</div>
+    <!-- DOCUMENTO -->
+    <div id="viewer"></div>
 
+</div>
 <script>
-    // --- CONFIGURAÇÃO DO SUPABASE ---
+    // ════════════════════════════════════════════════
+    // ⚙️  CONFIGURAÇÃO
+    // ════════════════════════════════════════════════
     const SUPABASE_URL = "https://epbfgvhjrcfjewwmptjj.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwYmZndmhqcmNmamV3d21wdGpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNzk4NjgsImV4cCI6MjA4ODc1NTg2OH0.50JJJgmtSAFCA6ivFyzFW1EiPx2hsxoF5Rl4BvOaiwQ";
-    let _supabase;
+    const BUCKET       = "documentos";
+    // ════════════════════════════════════════════════
 
-    // Inicialização segura do cliente
+    // ── LOG VISUAL ───────────────────────────────────
+    const logBox = document.getElementById("uploadLog");
+    function log(type, msg) {
+        console.log(msg);
+        logBox.style.display = "block";
+        const d = document.createElement("div");
+        d.className = type;
+        d.textContent = msg;
+        logBox.appendChild(d);
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // ── SUPABASE ─────────────────────────────────────
+    let _supabase = null;
     try {
         _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        console.log("Supabase inicializado.");
-    } catch (e) {
-        console.error("Erro ao carregar SDK do Supabase:", e);
+        log("inf", "✅ Supabase inicializado.");
+    } catch(e) {
+        log("err", "❌ Supabase falhou: " + e.message);
     }
 
-    let docHtml = "";
-    let matchesElements = [];
-    let currentIdx = -1;
-    let db;
-    let isProcessing = false;
+    // ── ESTADO ───────────────────────────────────────
+    let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
 
-    // --- CONFIGURAÇÃO DO INDEXEDDB ---
+    // ── INDEXEDDB ────────────────────────────────────
     function initDB() {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open("WordSearchDB", 1);
-            request.onerror = (e) => reject("Erro no IndexedDB");
-            request.onsuccess = (e) => {
-                db = e.target.result;
-                resolve(db);
-            };
-            request.onupgradeneeded = (e) => {
-                const database = e.target.result;
-                if (!database.objectStoreNames.contains("documents")) {
-                    database.createObjectStore("documents");
-                }
+        return new Promise((res, rej) => {
+            const r = indexedDB.open("WordSearchDB", 1);
+            r.onerror = () => rej("Erro IndexedDB");
+            r.onsuccess = e => { db = e.target.result; res(db); };
+            r.onupgradeneeded = e => {
+                if (!e.target.result.objectStoreNames.contains("documents"))
+                    e.target.result.createObjectStore("documents");
             };
         });
     }
-
-    function saveToDB(arrayBuffer) {
-        const transaction = db.transaction(["documents"], "readwrite");
-        const store = transaction.objectStore("documents");
-        store.put(arrayBuffer, "currentFile");
+    function saveToDB(buf) {
+        db.transaction(["documents"], "readwrite")
+          .objectStore("documents").put(buf, "currentFile");
     }
-
     function loadFromDB() {
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(["documents"], "readonly");
-            const store = transaction.objectStore("documents");
-            const request = store.get("currentFile");
-            request.onsuccess = (e) => resolve(e.target.result);
-            request.onerror = (e) => reject("Erro ao carregar");
+        return new Promise((res, rej) => {
+            const r = db.transaction(["documents"], "readonly")
+                        .objectStore("documents").get("currentFile");
+            r.onsuccess = e => res(e.target.result || null);
+            r.onerror   = () => rej("Erro ao carregar");
         });
     }
-
     function clearFile() {
-        const transaction = db.transaction(["documents"], "readwrite");
-        const store = transaction.objectStore("documents");
-        store.delete("currentFile");
-        location.reload(); 
+        db.transaction(["documents"], "readwrite")
+          .objectStore("documents").delete("currentFile");
+        location.reload();
     }
 
-    // --- CARREGAMENTO DO ARQUIVO ---
-    const fileInput = document.getElementById('fileInput');
-    const uploadArea = document.getElementById('uploadArea');
-    const searchContainer = document.getElementById('searchContainer');
-    const counterText = document.getElementById('counterText');
-
-    uploadArea.onclick = () => fileInput.click();
-
-    function processArrayBuffer(arrayBuffer) {
-        uploadArea.style.display = 'none';
-        searchContainer.style.display = 'block';
-        counterText.innerText = "Lendo documento...";
+    // ── PROCESSAR DOCX ───────────────────────────────
+    function processArrayBuffer(buf) {
+        document.getElementById("uploadArea").style.display      = "none";
+        document.getElementById("searchContainer").style.display = "block";
+        document.getElementById("counterText").innerText = "⏳ Lendo documento...";
         isProcessing = true;
 
-        mammoth.convertToHtml({ arrayBuffer: arrayBuffer })
-            .then(result => {
-                docHtml = result.value;
-                document.getElementById('viewer').innerHTML = docHtml;
-                counterText.innerText = "";
+        mammoth.convertToHtml({ arrayBuffer: buf })
+            .then(r => {
+                docHtml = r.value;
+                document.getElementById("viewer").innerHTML = docHtml;
+                document.getElementById("counterText").innerText = "✅ Pronto! Digite para pesquisar.";
                 isProcessing = false;
             })
-            .catch(err => {
-                console.error("Erro ao processar documento:", err);
-                counterText.innerText = "Erro ao carregar arquivo.";
+            .catch(() => {
+                document.getElementById("counterText").innerText = "❌ Erro ao ler o arquivo.";
                 isProcessing = false;
             });
     }
 
+    // ── INIT ─────────────────────────────────────────
     window.onload = async () => {
         try {
             await initDB();
-            const savedFile = await loadFromDB();
-            if (savedFile) {
-                processArrayBuffer(savedFile);
+            const saved = await loadFromDB();
+            if (saved) {
+                processArrayBuffer(saved);
             } else {
-                uploadArea.style.display = 'block';
+                document.getElementById("uploadArea").style.display = "block";
             }
-        } catch (e) {
-            console.error(e);
-            uploadArea.style.display = 'block';
+        } catch(e) {
+            document.getElementById("uploadArea").style.display = "block";
         }
     };
 
-    // --- LÓGICA DE UPLOAD (SUPABASE + LOCAL) ---
+    // ── UPLOAD ───────────────────────────────────────
+    const uploadArea = document.getElementById("uploadArea");
+    const fileInput  = document.getElementById("fileInput");
+    uploadArea.onclick = () => fileInput.click();
+
     fileInput.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        console.log("Arquivo selecionado:", file.name);
-        uploadArea.style.display = 'none';
-        searchContainer.style.display = 'block';
-        counterText.innerText = "Subindo para a nuvem...";
+        document.getElementById("uploadArea").style.display      = "none";
+        document.getElementById("searchContainer").style.display = "block";
+        document.getElementById("counterText").innerText = "⬆️ Enviando para a nuvem...";
 
-        // 1. TENTAR UPLOAD PARA O SUPABASE
+        log("inf", `📄 Arquivo: ${file.name} | ${(file.size/1024).toFixed(1)} KB`);
+
+        // SUPABASE
         if (_supabase) {
             try {
-                // Criar um nome de arquivo único ou fixo
                 const fileName = `doc_${Date.now()}.docx`;
-                
+                log("inf", `⬆️  Enviando como "${fileName}" no bucket "${BUCKET}"...`);
+
                 const { data, error } = await _supabase.storage
-                    .from('documentos')
-                    .upload(fileName, file, { 
-                        cacheControl: '3600',
-                        upsert: true 
+                    .from(BUCKET)
+                    .upload(fileName, file, {
+                        cacheControl: "3600",
+                        upsert: true,
+                        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     });
 
                 if (error) {
-                    console.error("Erro no Upload Supabase:", error.message);
-                    alert("Erro Supabase: " + error.message);
+                    log("err", `❌ Erro: ${error.message}`);
+                    log("err", `   Status: ${error.status ?? "N/A"}`);
+                    log("err", `   Detalhes: ${JSON.stringify(error)}`);
                 } else {
-                    console.log("Upload concluído com sucesso:", data);
-                    alert("Sucesso! Arquivo salvo no Supabase.");
+                    log("ok", `✅ Upload concluído! Caminho: ${data.path}`);
                 }
-            } catch (err) {
-                console.error("Falha técnica no upload:", err);
+            } catch(err) {
+                log("err", "💥 Exceção: " + err.message);
             }
+        } else {
+            log("err", "❌ Supabase não disponível — verifique URL e KEY.");
         }
 
-        // 2. PROCESSAMENTO LOCAL (INDEXEDDB + MAMMOTH)
+        // LOCAL (IndexedDB + Mammoth)
         const reader = new FileReader();
-        reader.onload = (event) => {
-            const arrayBuffer = event.target.result;
-            saveToDB(arrayBuffer);
-            processArrayBuffer(arrayBuffer);
+        reader.onload = ev => {
+            saveToDB(ev.target.result);
+            processArrayBuffer(ev.target.result);
         };
         reader.readAsArrayBuffer(file);
     };
 
-    // --- LÓGICA DE BUSCA (SMART REGEX) ---
+    // ── BUSCA FONÉTICA ───────────────────────────────
     function generateSmartRegex(query) {
-        let q = query.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\./g, "").toLowerCase().trim();
-        q = q.replace(/(.)\1+/g, '$1');
-        q = q.replace(/^h/g, ''); 
+        let q = query.normalize("NFD")
+                     .replace(/[\u0300-\u036f]/g, "")
+                     .replace(/\./g, "")
+                     .toLowerCase().trim();
+        q = q.replace(/(.)\1+/g, "$1").replace(/^h/, "");
 
-        const phoneticMap = {
-            'a': '[aáàãâ]', 'e': '[yeéê]', 'i': '[iíy]', 'y': '[eyií]',
-            'o': '[oóôõ]', 'u': '[uúüw]', 'w': '[vwuúü]',
-            'c': '[ckq]', 'k': '[ckq]', 'q': '[qkc]',
-            's': '[sçcz]', 'z': '[zsç]', 'ç': '[çscz]',
-            'r': 'r', 'l': 'l', 'n': '[n]', 'm': '[m]', 'v': '[vw]',
+        const pm = {
+            'a':'[aáàãâ]','e':'[yeéê]','i':'[iíy]','y':'[eyií]',
+            'o':'[oóôõ]', 'u':'[uúüw]','w':'[vwuúü]',
+            'c':'[ckq]',  'k':'[ckq]', 'q':'[qkc]',
+            's':'[sçcz]', 'z':'[zsç]', 'ç':'[çscz]',
+            'r':'r','l':'l','n':'[n]','m':'[m]','v':'[vw]'
         };
-
-        const pattern = q.split('').map(char => {
-            const sound = phoneticMap[char] || char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            return sound + '+'; 
-        }).join('h?');
-
-        return new RegExp(`(h?${pattern})`, 'gi');
+        const pattern = q.split("").map(c =>
+            (pm[c] || c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) + "+"
+        ).join("h?");
+        return new RegExp(`(h?${pattern})`, "gi");
     }
 
     function performSearch() {
         if (isProcessing) return;
+        const query  = document.getElementById("searchInput").value;
+        const viewer = document.getElementById("viewer");
+        const nav    = document.getElementById("navButtons");
+        const nf     = document.getElementById("notFoundMsg");
+        const badge  = document.getElementById("personBadge");
 
-        const originalQuery = document.getElementById('searchInput').value;
-        const viewer = document.getElementById('viewer');
-        const nav = document.getElementById('navButtons');
-        const notFound = document.getElementById('notFoundMsg');
-        const badge = document.getElementById('personBadge');
-
-        if (!originalQuery.trim()) {
-            viewer.style.display = 'none';
-            return;
-        }
+        if (!query.trim()) { viewer.style.display = "none"; return; }
 
         viewer.innerHTML = docHtml;
-        viewer.style.display = 'block';
-        matchesElements = [];
-        currentIdx = -1;
-        notFound.style.display = 'none';
-        nav.style.display = 'none';
-        badge.style.display = 'none';
-        counterText.innerText = "";
+        viewer.style.display = "block";
+        matchesElements = []; currentIdx = -1;
+        nf.style.display = "none"; nav.style.display = "none"; badge.style.display = "none";
+        document.getElementById("counterText").innerText = "";
 
-        const regex = generateSmartRegex(originalQuery);
+        const regex = generateSmartRegex(query);
         const walker = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
-        const nodes = [];
-        let n;
-        while(n = walker.nextNode()) nodes.push(n);
+        const nodes = []; let n;
+        while ((n = walker.nextNode())) nodes.push(n);
 
         nodes.forEach(node => {
             if (regex.test(node.nodeValue)) {
-                const span = document.createElement('span');
-                span.innerHTML = node.nodeValue.replace(regex, '<span class="match">$1</span>');
-                node.parentNode.replaceChild(span, node);
+                const s = document.createElement("span");
+                s.innerHTML = node.nodeValue.replace(regex, '<span class="match">$1</span>');
+                node.parentNode.replaceChild(s, node);
             }
         });
 
-        matchesElements = Array.from(viewer.querySelectorAll('.match'));
-
+        matchesElements = Array.from(viewer.querySelectorAll(".match"));
         if (matchesElements.length > 0) {
-            nav.style.display = 'flex';
-            if (/^[A-ZÀ-Ú]/.test(originalQuery.trim())) {
-                badge.style.display = 'inline-block';
-                document.getElementById('pName').innerText = originalQuery;
+            nav.style.display = "flex";
+            if (/^[A-ZÀ-Ú]/.test(query.trim())) {
+                badge.style.display = "inline-block";
+                document.getElementById("pName").innerText = query;
             }
             navigate(1);
         } else {
-            notFound.style.display = 'inline';
-            viewer.style.display = 'none';
+            nf.style.display = "inline";
+            viewer.style.display = "none";
         }
     }
 
-    function navigate(direction) {
-        if (matchesElements.length === 0) return;
-        if (currentIdx >= 0) matchesElements[currentIdx].classList.remove('active');
-        
-        currentIdx += direction;
+    function navigate(dir) {
+        if (!matchesElements.length) return;
+        if (currentIdx >= 0) matchesElements[currentIdx].classList.remove("active");
+        currentIdx += dir;
         if (currentIdx >= matchesElements.length) currentIdx = 0;
         if (currentIdx < 0) currentIdx = matchesElements.length - 1;
-
-        const active = matchesElements[currentIdx];
-        active.classList.add('active');
-        active.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        counterText.innerText = `${currentIdx + 1} de ${matchesElements.length}`;
+        const a = matchesElements[currentIdx];
+        a.classList.add("active");
+        a.scrollIntoView({ behavior: "smooth", block: "center" });
+        document.getElementById("counterText").innerText = `${currentIdx + 1} de ${matchesElements.length}`;
     }
 
-    // --- VOZ ---
-    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRec) {
-        const rec = new SpeechRec();
-        rec.lang = 'pt-BR';
-        const voiceBtn = document.getElementById('voiceBtn');
-
-        voiceBtn.onclick = () => {
-            rec.start();
-            voiceBtn.classList.add('recording');
-        };
-
-        rec.onresult = (e) => {
-            let transcript = e.results[0][0].transcript.replace(/\.$/g, '');
-            document.getElementById('searchInput').value = transcript;
+    // ── VOZ ──────────────────────────────────────────
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SR) {
+        const rec = new SR(); rec.lang = "pt-BR";
+        const vb = document.getElementById("voiceBtn");
+        vb.onclick = () => { rec.start(); vb.classList.add("recording"); vb.textContent = "🔴 Ouvindo..."; };
+        rec.onresult = e => {
+            document.getElementById("searchInput").value = e.results[0][0].transcript.replace(/\.$/, "");
             setTimeout(performSearch, 300);
         };
-        rec.onend = () => voiceBtn.classList.remove('recording');
+        rec.onend  = () => { vb.classList.remove("recording"); vb.innerHTML = "🎤 Voz"; };
+        rec.onerror = e => { vb.classList.remove("recording"); vb.innerHTML = "🎤 Voz"; };
+    } else {
+        document.getElementById("voiceBtn").style.display = "none";
     }
 
-    document.getElementById('searchInput').onkeypress = (e) => {
-        if(e.key === 'Enter') performSearch();
+    document.getElementById("searchInput").onkeypress = e => {
+        if (e.key === "Enter") performSearch();
     };
 </script>
 </body>
