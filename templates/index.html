@@ -36,7 +36,7 @@
             -webkit-backdrop-filter: blur(15px);
             border-bottom: 1px solid #262626;
             z-index: 1000;
-            padding: 8px 0; /* Espaçamento mínimo */
+            padding: 8px 0;
             box-shadow: 0 4px 20px rgba(0,0,0,0.8);
         }
 
@@ -61,7 +61,7 @@
 
         /* Controles de Busca */
         .search-controls {
-            display: none; /* Ativado via JS */
+            display: none;
             flex-direction: column;
             gap: 6px;
         }
@@ -145,14 +145,14 @@
             display: none;
         }
 
-        /* ── LOG OCULTO (Não ocupa espaço agora) ── */
+        /* ── LOG OCULTO ── */
         #systemLog { display: none !important; }
 
         /* ── CONTEÚDO PRINCIPAL ── */
         .main-content {
             width: 95%;
             max-width: 900px;
-            margin: 140px auto 20px auto; /* Espaço reduzido para o documento subir */
+            margin: 180px auto 20px auto;
             padding-bottom: 30px;
         }
 
@@ -171,6 +171,9 @@
             padding: 15px;
             border: 1px solid #262626;
             display: none;
+            /* Otimização extrema para celulares: só renderiza o que está na tela */
+            content-visibility: auto;
+            contain-intrinsic-size: 1000px;
         }
 
         /* Estilo das tabelas Word */
@@ -190,7 +193,7 @@
         }
 
         @media (max-width: 600px) {
-            .main-content { margin-top: 155px; }
+            .main-content { margin-top: 190px; }
         }
 
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
@@ -255,8 +258,9 @@
         });
     }
 
-    function saveToDB(buf) {
-        db.transaction(["documents"], "readwrite").objectStore("documents").put(buf, "currentFile");
+    // AGORA SALVA O HTML PRONTO, NÃO O ARQUIVO PESADO
+    function saveToDB(data) {
+        db.transaction(["documents"], "readwrite").objectStore("documents").put(data, "currentFile");
     }
 
     function loadFromDB() {
@@ -269,7 +273,6 @@
     function clearFile() {
         if(confirm("Trocar documento?")) {
             db.transaction(["documents"], "readwrite").objectStore("documents").delete("currentFile");
-            // Define uma flag para não baixar automaticamente da nuvem logo após o usuário limpar
             sessionStorage.setItem("skipSupabaseFetch", "true"); 
             location.reload();
         }
@@ -284,14 +287,30 @@
         try {
             const result = await mammoth.convertToHtml({ arrayBuffer: buf });
             docHtml = result.value;
+            
+            // Salva a versão HTML (leve e imediata) para os próximos carregamentos
+            saveToDB(docHtml); 
+
             const v = document.getElementById("viewer");
             v.innerHTML = docHtml;
             v.style.display = "block";
         } catch (err) {
             console.error(err);
+            document.getElementById("uploadArea").style.display = "block";
+            document.getElementById("searchContainer").style.display = "none";
         } finally {
             isProcessing = false;
         }
+    }
+
+    // Exibe o HTML diretamente do banco (Novo Carregamento Rápido)
+    function displayCachedHtml(htmlData) {
+        docHtml = htmlData;
+        document.getElementById("uploadArea").style.display = "none";
+        document.getElementById("searchContainer").style.display = "flex";
+        const v = document.getElementById("viewer");
+        v.innerHTML = docHtml;
+        v.style.display = "block";
     }
 
     // Upload Local e para Supabase
@@ -304,7 +323,6 @@
 
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         try {
-            // Salva na nuvem com um identificador de data para ser o mais recente
             const fileName = `doc_${Date.now()}.docx`;
             await _supabase.storage.from(BUCKET).upload(fileName, file);
         } catch(ex) {
@@ -313,21 +331,20 @@
 
         const reader = new FileReader();
         reader.onload = ev => {
-            saveToDB(ev.target.result);
+            // Processa o buffer; a função processDoc irá salvar o HTML
             processDoc(ev.target.result);
         };
         reader.readAsArrayBuffer(file);
     };
 
-    // Função NOVA: Buscar o arquivo mais recente da nuvem se não existir localmente
+    // Buscar arquivo da nuvem (se o aparelho estiver zerado)
     async function fetchLatestFromSupabase() {
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         try {
             const uploadTitle = document.querySelector("#uploadArea h3");
             const originalText = uploadTitle.innerText;
-            uploadTitle.innerText = "⏳ Sincronizando da nuvem...";
+            uploadTitle.innerText = "⏳ Sincronizando e Processando...";
 
-            // Pega a lista de arquivos ordenando do mais novo pro mais velho
             const { data, error } = await _supabase.storage.from(BUCKET).list('', {
                 limit: 5, 
                 sortBy: { column: 'created_at', order: 'desc' }
@@ -335,24 +352,21 @@
 
             if (error) throw error;
 
-            // Encontra o arquivo .docx mais recente
             const latestFile = data && data.find(f => f.name.endsWith('.docx'));
 
             if (latestFile) {
-                // Faz o download do arquivo
                 const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
                 
                 if (downloadError) throw downloadError;
 
                 if (fileData) {
                     const arrayBuffer = await fileData.arrayBuffer();
-                    saveToDB(arrayBuffer); // Salva no aparelho para acessos futuros
+                    // Processa e converte. Nas próximas vezes, usará a versão HTML cacheada
                     await processDoc(arrayBuffer);
-                    return; // Finaliza com sucesso
+                    return; 
                 }
             }
             
-            // Se chegou aqui, não achou arquivo na nuvem
             uploadTitle.innerText = originalText;
         } catch (err) {
             console.error("Erro ao buscar arquivo do Supabase:", err);
@@ -444,16 +458,21 @@
         rec.onend = () => vBtn.classList.remove("recording");
     }
 
-    // MODIFICADO: Lógica de Carregamento Inicial
+    // Carregamento Inicial Otimizado
     window.onload = async () => {
         await initDB();
-        const saved = await loadFromDB();
+        const savedData = await loadFromDB();
         
-        if (saved) {
-            // Se já tem salvo no dispositivo, usa ele
-            processDoc(saved);
+        if (savedData) {
+            // Se o dado salvo for uma string, é o HTML já pronto (Carga Expressa!)
+            if (typeof savedData === 'string') {
+                displayCachedHtml(savedData);
+            } else {
+                // Se for um ArrayBuffer antigo (de antes desta atualização), processa e converte
+                processDoc(savedData);
+            }
         } else if (!sessionStorage.getItem("skipSupabaseFetch")) {
-            // Se o aparelho não tem o arquivo e o usuário NÃO clicou em recarregar, busca na nuvem
+            // Se o aparelho não tem o arquivo, baixa da nuvem
             await fetchLatestFromSupabase();
         }
     };
