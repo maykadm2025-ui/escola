@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pesquisa Definitiva - Word</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.21/mammoth.browser.min.js"></script>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --accent: #f59e0b;
+            --danger: #ef4444;
+            --success: #10b981;
+            --bg: #f3f4f6;
+        }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background-color: var(--bg);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .app-container {
+            background: white;
+            width: 100%;
+            max-width: 900px;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .upload-section {
+            border: 2px dashed #d1d5db;
+            padding: 40px;
+            border-radius: 12px;
+            text-align: center;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: 0.3s;
+            display: none; 
+        }
+        .upload-section:hover { border-color: var(--primary); background: #f9fafb; }
+        
+        .search-controls {
+            position: sticky;
+            top: 10px;
+            background: white;
+            padding: 20px;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            z-index: 1000;
+            margin-bottom: 20px;
+            display: none;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+        .input-row { display: flex; gap: 10px; }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 16px;
+            outline: none;
+            transition: 0.2s;
+        }
+        input[type="text"]:focus { border-color: var(--primary); }
+        
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: 0.2s;
+        }
+        button:active { transform: scale(0.98); }
+        .btn-main { background: var(--primary); color: white; }
+        .btn-voice { background: #6b7280; color: white; }
+        .btn-voice.recording { background: var(--danger); animation: pulse 1.5s infinite; }
+        .btn-nav { background: #f3f4f6; color: #374151; }
+        .btn-clear { background: #fee2e2; color: #b91c1c; padding: 12px; }
+
+        .status-bar {
+            margin-top: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            min-height: 40px;
+            font-size: 14px;
+        }
+        .person-badge {
+            background: #dcfce7;
+            color: #166534;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            display: none;
+        }
+
+        #viewer {
+            background: white;
+            border: 1px solid #e5e7eb;
+            padding: 30px;
+            border-radius: 8px;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+        table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+        td, th { border: 1px solid #d1d5db; padding: 10px; }
+
+        .match { background-color: #fef08a; border-radius: 2px; }
+        .match.active { background-color: var(--accent); color: white; box-shadow: 0 0 8px rgba(245, 158, 11, 0.6); }
+
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <div id="uploadArea" class="upload-section">
+        <h3 style="margin-top: 0;">Carregar Documento Word (.docx)</h3>
+        <p style="color: #6b7280; margin-bottom: 0;">O arquivo será salvo no Supabase e no seu navegador.</p>
+        <input type="file" id="fileInput" accept=".docx" style="display:none" />
+    </div>
+
+    <div id="searchContainer" class="search-controls">
+        <div class="input-row">
+            <input type="text" id="searchInput" placeholder="Pesquise nomes, termos (ex: Heloísa, Caio)...">
+            <button class="btn-voice" id="voiceBtn">🎤 Voz</button>
+            <button class="btn-main" id="btnSearch" onclick="performSearch()">Pesquisar</button>
+            <button class="btn-clear" onclick="clearFile()" title="Trocar Arquivo">🔄</button>
+        </div>
+        
+        <div class="status-bar">
+            <div>
+                <span id="counterText" style="font-weight: bold; color: #374151;"></span>
+                <span id="notFoundMsg" style="color:var(--danger); display:none; font-weight:bold;">⚠️ Nenhum resultado encontrado</span>
+            </div>
+            
+            <div id="navButtons" style="display:none; gap:5px;">
+                <button class="btn-nav" onclick="navigate(-1)">Anterior</button>
+                <button class="btn-nav" onclick="navigate(1)">Próximo</button>
+            </div>
+            
+            <div id="personBadge" class="person-badge">Pessoa: <span id="pName"></span></div>
+        </div>
+    </div>
+
+    <div id="viewer" style="display:none"></div>
+</div>
+
+<script>
+    // --- CONFIGURAÇÃO DO SUPABASE ---
+    const SUPABASE_URL = "https://epbfgvhjrcfjewwmptjj.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwYmZndmhqcmNmamV3d21wdGpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNzk4NjgsImV4cCI6MjA4ODc1NTg2OH0.50JJJgmtSAFCA6ivFyzFW1EiPx2hsxoF5Rl4BvOaiwQ";
+    let _supabase;
+
+    // Inicialização segura do cliente
+    try {
+        _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        console.log("Supabase inicializado.");
+    } catch (e) {
+        console.error("Erro ao carregar SDK do Supabase:", e);
+    }
+
+    let docHtml = "";
+    let matchesElements = [];
+    let currentIdx = -1;
+    let db;
+    let isProcessing = false;
+
+    // --- CONFIGURAÇÃO DO INDEXEDDB ---
+    function initDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open("WordSearchDB", 1);
+            request.onerror = (e) => reject("Erro no IndexedDB");
+            request.onsuccess = (e) => {
+                db = e.target.result;
+                resolve(db);
+            };
+            request.onupgradeneeded = (e) => {
+                const database = e.target.result;
+                if (!database.objectStoreNames.contains("documents")) {
+                    database.createObjectStore("documents");
+                }
+            };
+        });
+    }
+
+    function saveToDB(arrayBuffer) {
+        const transaction = db.transaction(["documents"], "readwrite");
+        const store = transaction.objectStore("documents");
+        store.put(arrayBuffer, "currentFile");
+    }
+
+    function loadFromDB() {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(["documents"], "readonly");
+            const store = transaction.objectStore("documents");
+            const request = store.get("currentFile");
+            request.onsuccess = (e) => resolve(e.target.result);
+            request.onerror = (e) => reject("Erro ao carregar");
+        });
+    }
+
+    function clearFile() {
+        const transaction = db.transaction(["documents"], "readwrite");
+        const store = transaction.objectStore("documents");
+        store.delete("currentFile");
+        location.reload(); 
+    }
+
+    // --- CARREGAMENTO DO ARQUIVO ---
+    const fileInput = document.getElementById('fileInput');
+    const uploadArea = document.getElementById('uploadArea');
+    const searchContainer = document.getElementById('searchContainer');
+    const counterText = document.getElementById('counterText');
+
+    uploadArea.onclick = () => fileInput.click();
+
+    function processArrayBuffer(arrayBuffer) {
+        uploadArea.style.display = 'none';
+        searchContainer.style.display = 'block';
+        counterText.innerText = "Lendo documento...";
+        isProcessing = true;
+
+        mammoth.convertToHtml({ arrayBuffer: arrayBuffer })
+            .then(result => {
+                docHtml = result.value;
+                document.getElementById('viewer').innerHTML = docHtml;
+                counterText.innerText = "";
+                isProcessing = false;
+            })
+            .catch(err => {
+                console.error("Erro ao processar documento:", err);
+                counterText.innerText = "Erro ao carregar arquivo.";
+                isProcessing = false;
+            });
+    }
+
+    window.onload = async () => {
+        try {
+            await initDB();
+            const savedFile = await loadFromDB();
+            if (savedFile) {
+                processArrayBuffer(savedFile);
+            } else {
+                uploadArea.style.display = 'block';
+            }
+        } catch (e) {
+            console.error(e);
+            uploadArea.style.display = 'block';
+        }
+    };
+
+    // --- LÓGICA DE UPLOAD (SUPABASE + LOCAL) ---
+    fileInput.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        console.log("Arquivo selecionado:", file.name);
+        uploadArea.style.display = 'none';
+        searchContainer.style.display = 'block';
+        counterText.innerText = "Subindo para a nuvem...";
+
+        // 1. TENTAR UPLOAD PARA O SUPABASE
+        if (_supabase) {
+            try {
+                // Criar um nome de arquivo único ou fixo
+                const fileName = `doc_${Date.now()}.docx`;
+                
+                const { data, error } = await _supabase.storage
+                    .from('documentos')
+                    .upload(fileName, file, { 
+                        cacheControl: '3600',
+                        upsert: true 
+                    });
+
+                if (error) {
+                    console.error("Erro no Upload Supabase:", error.message);
+                    alert("Erro Supabase: " + error.message);
+                } else {
+                    console.log("Upload concluído com sucesso:", data);
+                    alert("Sucesso! Arquivo salvo no Supabase.");
+                }
+            } catch (err) {
+                console.error("Falha técnica no upload:", err);
+            }
+        }
+
+        // 2. PROCESSAMENTO LOCAL (INDEXEDDB + MAMMOTH)
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const arrayBuffer = event.target.result;
+            saveToDB(arrayBuffer);
+            processArrayBuffer(arrayBuffer);
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
+    // --- LÓGICA DE BUSCA (SMART REGEX) ---
+    function generateSmartRegex(query) {
+        let q = query.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\./g, "").toLowerCase().trim();
+        q = q.replace(/(.)\1+/g, '$1');
+        q = q.replace(/^h/g, ''); 
+
+        const phoneticMap = {
+            'a': '[aáàãâ]', 'e': '[yeéê]', 'i': '[iíy]', 'y': '[eyií]',
+            'o': '[oóôõ]', 'u': '[uúüw]', 'w': '[vwuúü]',
+            'c': '[ckq]', 'k': '[ckq]', 'q': '[qkc]',
+            's': '[sçcz]', 'z': '[zsç]', 'ç': '[çscz]',
+            'r': 'r', 'l': 'l', 'n': '[n]', 'm': '[m]', 'v': '[vw]',
+        };
+
+        const pattern = q.split('').map(char => {
+            const sound = phoneticMap[char] || char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return sound + '+'; 
+        }).join('h?');
+
+        return new RegExp(`(h?${pattern})`, 'gi');
+    }
+
+    function performSearch() {
+        if (isProcessing) return;
+
+        const originalQuery = document.getElementById('searchInput').value;
+        const viewer = document.getElementById('viewer');
+        const nav = document.getElementById('navButtons');
+        const notFound = document.getElementById('notFoundMsg');
+        const badge = document.getElementById('personBadge');
+
+        if (!originalQuery.trim()) {
+            viewer.style.display = 'none';
+            return;
+        }
+
+        viewer.innerHTML = docHtml;
+        viewer.style.display = 'block';
+        matchesElements = [];
+        currentIdx = -1;
+        notFound.style.display = 'none';
+        nav.style.display = 'none';
+        badge.style.display = 'none';
+        counterText.innerText = "";
+
+        const regex = generateSmartRegex(originalQuery);
+        const walker = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
+        const nodes = [];
+        let n;
+        while(n = walker.nextNode()) nodes.push(n);
+
+        nodes.forEach(node => {
+            if (regex.test(node.nodeValue)) {
+                const span = document.createElement('span');
+                span.innerHTML = node.nodeValue.replace(regex, '<span class="match">$1</span>');
+                node.parentNode.replaceChild(span, node);
+            }
+        });
+
+        matchesElements = Array.from(viewer.querySelectorAll('.match'));
+
+        if (matchesElements.length > 0) {
+            nav.style.display = 'flex';
+            if (/^[A-ZÀ-Ú]/.test(originalQuery.trim())) {
+                badge.style.display = 'inline-block';
+                document.getElementById('pName').innerText = originalQuery;
+            }
+            navigate(1);
+        } else {
+            notFound.style.display = 'inline';
+            viewer.style.display = 'none';
+        }
+    }
+
+    function navigate(direction) {
+        if (matchesElements.length === 0) return;
+        if (currentIdx >= 0) matchesElements[currentIdx].classList.remove('active');
+        
+        currentIdx += direction;
+        if (currentIdx >= matchesElements.length) currentIdx = 0;
+        if (currentIdx < 0) currentIdx = matchesElements.length - 1;
+
+        const active = matchesElements[currentIdx];
+        active.classList.add('active');
+        active.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        counterText.innerText = `${currentIdx + 1} de ${matchesElements.length}`;
+    }
+
+    // --- VOZ ---
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRec) {
+        const rec = new SpeechRec();
+        rec.lang = 'pt-BR';
+        const voiceBtn = document.getElementById('voiceBtn');
+
+        voiceBtn.onclick = () => {
+            rec.start();
+            voiceBtn.classList.add('recording');
+        };
+
+        rec.onresult = (e) => {
+            let transcript = e.results[0][0].transcript.replace(/\.$/g, '');
+            document.getElementById('searchInput').value = transcript;
+            setTimeout(performSearch, 300);
+        };
+        rec.onend = () => voiceBtn.classList.remove('recording');
+    }
+
+    document.getElementById('searchInput').onkeypress = (e) => {
+        if(e.key === 'Enter') performSearch();
+    };
+</script>
+</body>
+</html>
