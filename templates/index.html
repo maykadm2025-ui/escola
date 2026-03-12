@@ -271,10 +271,13 @@
     }
 
     function clearFile() {
-        if(confirm("Trocar documento?")) {
+        const senha = prompt("Digite a senha para trocar o arquivo:");
+        if (senha === "0009") {
             db.transaction(["documents"], "readwrite").objectStore("documents").delete("currentFile");
             sessionStorage.setItem("skipSupabaseFetch", "true"); 
             location.reload();
+        } else if (senha !== null) {
+            alert("Senha incorreta!");
         }
     }
 
@@ -381,7 +384,7 @@
         const mapa = {
             'a':'[aáàãâ]','e':'[iyeéê]','i':'[eiíy]','y':'[eyií]',
             'o':'[oóôõ]', 'u':'[uúüw]','w':'[vwuúü]',
-            'c':'[ckq]', 'k':'[ckq]', 'q':'[qkc]',
+            'c': '[cçckq]', 'k':'[ckq]', 'q':'[qkc]',
             's':'[sçcz]', 'z':'[zsç]', 'ç':'[çscz]', 'v':'[vw]', 'g':'[gj]', 'j':'[jg]' 
         };
         const pattern = q.split("").map(c => (mapa[c] || c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) + "+").join("h?");
@@ -417,7 +420,23 @@
             }
         });
 
-        matchesElements = Array.from(viewer.querySelectorAll(".match"));
+        const allMatches = Array.from(viewer.querySelectorAll(".match"));
+        const exactQuery = query.trim().toLowerCase();
+        
+        // Separação para dar prioridade ao termo exato digitado
+        const exactMatches = [];
+        const phoneticMatches = [];
+        
+        allMatches.forEach(el => {
+            if (el.textContent.toLowerCase().includes(exactQuery)) {
+                exactMatches.push(el);
+            } else {
+                phoneticMatches.push(el);
+            }
+        });
+
+        // Junta tudo colocando os exatos primeiro
+        matchesElements = [...exactMatches, ...phoneticMatches];
         
         if (matchesElements.length > 0) {
             nav.style.display = "flex";
@@ -475,6 +494,18 @@
             // Se o aparelho não tem o arquivo, baixa da nuvem
             await fetchLatestFromSupabase();
         }
+
+        // Ping no Supabase para manter o projeto acordado (prevent pause)
+        const _supabasePing = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        _supabasePing.storage.from(BUCKET).list('', { limit: 1 }).then(() => {
+            const connStatus = document.createElement("div");
+            connStatus.style.textAlign = "center";
+            connStatus.style.padding = "10px";
+            connStatus.style.fontSize = "11px";
+            connStatus.style.color = "#444";
+            connStatus.innerText = "banco de dados conectado";
+            document.body.appendChild(connStatus);
+        }).catch(e => console.error("Falha no ping do banco:", e));
     };
 
     document.getElementById("searchInput").onkeypress = e => { if (e.key === "Enter") performSearch(); };
