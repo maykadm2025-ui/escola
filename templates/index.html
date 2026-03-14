@@ -44,6 +44,7 @@
             width: 94%;
             max-width: 800px;
             margin: 0 auto;
+            position: relative; /* Permite posicionamento absoluto interno */
         }
 
         .escola-titulo {
@@ -58,6 +59,27 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
+
+        /* Botão + Adicionar Linha */
+        .btn-add {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 50px;
+            height: 40px;
+            background: #0a2a16;
+            color: #4ade80;
+            border: 1px solid #166534;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 22px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.1s;
+        }
+        .btn-add:active { transform: scale(0.96); }
 
         /* Controles de Busca */
         .search-controls {
@@ -113,16 +135,24 @@
 
         /* Status e Navegação */
         .status-row {
+            position: relative;
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-top: 2px;
-            min-height: 20px;
+            min-height: 55px;
         }
 
         .counter-badge { font-size: 10px; font-weight: 600; color: #64748b; }
 
-        .nav-cluster { display: flex; gap: 4px; }
+        .nav-cluster { 
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex; 
+            gap: 4px; 
+            z-index: 10;
+        }
         
         .btn-nav {
             background: #1e1e1e;
@@ -171,12 +201,11 @@
             padding: 15px;
             border: 1px solid #262626;
             display: none;
-            /* Otimização extrema para celulares: só renderiza o que está na tela */
             content-visibility: auto;
             contain-intrinsic-size: 1000px;
         }
 
-        /* Estilo das tabelas Word */
+        /* Estilo das tabelas Word e Nova Tabela Inserida */
         table { border-collapse: collapse; width: 100%; margin: 15px 0; color: #ccc; }
         td, th { border: 1px solid #333; padding: 8px; font-size: 12px; }
         
@@ -203,6 +232,7 @@
 
 <header class="fixed-header">
     <div class="header-container">
+        <button class="btn-add" onclick="addNewRow()" title="Adicionar Linha">+</button>
         <div class="escola-titulo">General</div>
         
         <div id="searchContainer" class="search-controls">
@@ -213,7 +243,7 @@
             <div class="button-actions-row">
                 <button class="btn-voice" id="voiceBtn">🎤</button>
                 <button class="btn-main" onclick="performSearch()">PESQUISAR</button>
-                <button class="btn-clear" onclick="clearFile()">🔄</button>
+                <button class="btn-clear" onclick="clearFile()" title="Forçar Atualização">🔄</button>
             </div>
             
             <div class="status-row">
@@ -248,6 +278,7 @@
     const BUCKET = "documentos";
 
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
+    let syncCheckRunning = false;
 
     // Inicialização do Banco Local
     function initDB() {
@@ -258,11 +289,12 @@
         });
     }
 
-    // AGORA SALVA O HTML PRONTO, NÃO O ARQUIVO PESADO
+    // Salva o HTML
     function saveToDB(data) {
         db.transaction(["documents"], "readwrite").objectStore("documents").put(data, "currentFile");
     }
 
+    // Carrega o HTML do DB
     function loadFromDB() {
         return new Promise((res) => {
             const req = db.transaction(["documents"], "readonly").objectStore("documents").get("currentFile");
@@ -271,14 +303,47 @@
     }
 
     function clearFile() {
-        const senha = prompt("Digite a senha para trocar o arquivo:");
+        const senha = prompt("Digite a senha para limpar o arquivo local:");
         if (senha === "0009") {
             db.transaction(["documents"], "readwrite").objectStore("documents").delete("currentFile");
-            sessionStorage.setItem("skipSupabaseFetch", "true"); 
+            localStorage.removeItem("lastProcessedFile");
             location.reload();
         } else if (senha !== null) {
             alert("Senha incorreta!");
         }
+    }
+
+    // Adicionar Nova Tabela (Linha com Nome e Informação)
+    function addNewRow() {
+        const viewer = document.getElementById("viewer");
+        if (!viewer || viewer.style.display === "none") {
+            alert("Abra ou baixe uma lista primeiro antes de adicionar linhas.");
+            return;
+        }
+
+        const newTable = document.createElement("table");
+        newTable.style.width = "100%";
+        newTable.style.marginTop = "15px";
+        
+        // Coluna 1 com 80% / Coluna 2 com 20%
+        newTable.innerHTML = `
+            <tr>
+                <td style="width: 80%; border: 1px solid #333; padding: 8px; color: #fff;" contenteditable="true">Inserir Nome...</td>
+                <td style="width: 20%; border: 1px solid #333; padding: 8px; color: #fff; text-align: center;" contenteditable="true">Info...</td>
+            </tr>
+        `;
+
+        // Salvar automaticamente ao digitar na nova tabela
+        newTable.addEventListener("input", () => {
+            docHtml = viewer.innerHTML;
+            saveToDB(docHtml);
+        });
+
+        viewer.appendChild(newTable);
+        docHtml = viewer.innerHTML;
+        saveToDB(docHtml);
+
+        newTable.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
     // Processamento Mammoth
@@ -291,7 +356,6 @@
             const result = await mammoth.convertToHtml({ arrayBuffer: buf });
             docHtml = result.value;
             
-            // Salva a versão HTML (leve e imediata) para os próximos carregamentos
             saveToDB(docHtml); 
 
             const v = document.getElementById("viewer");
@@ -316,6 +380,53 @@
         v.style.display = "block";
     }
 
+    // Sincronização Automática com Supabase
+    async function checkLatestSupabaseFile() {
+        if (syncCheckRunning || isProcessing) return;
+        syncCheckRunning = true;
+
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        try {
+            const { data, error } = await _supabase.storage.from(BUCKET).list('', {
+                limit: 1, 
+                sortBy: { column: 'created_at', order: 'desc' }
+            });
+
+            if (error || !data || data.length === 0) {
+                syncCheckRunning = false;
+                return;
+            }
+
+            const latestFile = data.find(f => f.name.endsWith('.docx'));
+            
+            if (latestFile) {
+                const lastFile = localStorage.getItem("lastProcessedFile");
+                
+                // Se o nome do arquivo na nuvem for diferente do que está no celular, baixa automaticamente!
+                if (latestFile.name !== lastFile) {
+                    console.log("Nova versão detectada. Atualizando...");
+                    const counter = document.getElementById("counterText");
+                    counter.innerText = "Atualizando lista...";
+                    
+                    const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
+                    
+                    if (downloadError) throw downloadError;
+
+                    if (fileData) {
+                        const arrayBuffer = await fileData.arrayBuffer();
+                        await processDoc(arrayBuffer);
+                        localStorage.setItem("lastProcessedFile", latestFile.name);
+                        counter.innerText = "Lista atualizada.";
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Erro ao sincronizar com Supabase:", err);
+        } finally {
+            syncCheckRunning = false;
+        }
+    }
+
     // Upload Local e para Supabase
     const fileInput = document.getElementById("fileInput");
     document.getElementById("uploadArea").onclick = () => fileInput.click();
@@ -325,57 +436,21 @@
         if (!file) return;
 
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const fileName = `doc_${Date.now()}.docx`;
         try {
-            const fileName = `doc_${Date.now()}.docx`;
             await _supabase.storage.from(BUCKET).upload(fileName, file);
+            // Salva na máquina local que esse foi o último arquivo processado (impede download redundante)
+            localStorage.setItem("lastProcessedFile", fileName);
         } catch(ex) {
             console.error("Erro no upload:", ex);
         }
 
         const reader = new FileReader();
         reader.onload = ev => {
-            // Processa o buffer; a função processDoc irá salvar o HTML
             processDoc(ev.target.result);
         };
         reader.readAsArrayBuffer(file);
     };
-
-    // Buscar arquivo da nuvem (se o aparelho estiver zerado)
-    async function fetchLatestFromSupabase() {
-        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        try {
-            const uploadTitle = document.querySelector("#uploadArea h3");
-            const originalText = uploadTitle.innerText;
-            uploadTitle.innerText = "⏳ Sincronizando e Processando...";
-
-            const { data, error } = await _supabase.storage.from(BUCKET).list('', {
-                limit: 5, 
-                sortBy: { column: 'created_at', order: 'desc' }
-            });
-
-            if (error) throw error;
-
-            const latestFile = data && data.find(f => f.name.endsWith('.docx'));
-
-            if (latestFile) {
-                const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
-                
-                if (downloadError) throw downloadError;
-
-                if (fileData) {
-                    const arrayBuffer = await fileData.arrayBuffer();
-                    // Processa e converte. Nas próximas vezes, usará a versão HTML cacheada
-                    await processDoc(arrayBuffer);
-                    return; 
-                }
-            }
-            
-            uploadTitle.innerText = originalText;
-        } catch (err) {
-            console.error("Erro ao buscar arquivo do Supabase:", err);
-            document.querySelector("#uploadArea h3").innerText = "📄 Abrir Lista (.docx)";
-        }
-    }
 
     // Regex Fonético
     function generateSmartRegex(query) {
@@ -384,7 +459,7 @@
         const mapa = {
             'a':'[aáàãâ]','e':'[iyeéê]','i':'[eiíy]','y':'[eyií]',
             'o':'[oóôõ]', 'u':'[uúüw]','w':'[vwuúü]',
-            'c': '[cçckq]', 'k':'[ckq]', 'q':'[qkc]',
+            'c': '[cçcskq]', 'k':'[ckq]', 'q':'[qkc]',
             's':'[sçcz]', 'z':'[zsç]', 'ç':'[çscz]', 'v':'[vw]', 'g':'[gj]', 'j':'[jg]' 
         };
         const pattern = q.split("").map(c => (mapa[c] || c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) + "+").join("h?");
@@ -423,7 +498,6 @@
         const allMatches = Array.from(viewer.querySelectorAll(".match"));
         const exactQuery = query.trim().toLowerCase();
         
-        // Separação para dar prioridade ao termo exato digitado
         const exactMatches = [];
         const phoneticMatches = [];
         
@@ -435,11 +509,10 @@
             }
         });
 
-        // Junta tudo colocando os exatos primeiro
         matchesElements = [...exactMatches, ...phoneticMatches];
         
         if (matchesElements.length > 0) {
-            nav.style.display = "flex";
+            nav.style.display = "flex"; // Volta o display flex conforme sua especificação 
             counter.innerText = `${matchesElements.length} itens encontrados.`;
             if (/^[A-ZÀ-Ú]/.test(query.trim())) {
                 badge.style.display = "inline-block";
@@ -463,50 +536,59 @@
         document.getElementById("counterText").innerText = `${currentIdx + 1} de ${matchesElements.length}`;
     }
 
-    // Voz
+    // Voz - Agora com tempo máximo de 5 Segundos
     const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (Speech) {
         const rec = new Speech();
         rec.lang = "pt-BR";
+        let voiceTimeout; // Variável para controlar o temporizador
+
         const vBtn = document.getElementById("voiceBtn");
-        vBtn.onclick = () => { rec.start(); vBtn.classList.add("recording"); };
+        
+        vBtn.onclick = () => { 
+            try { rec.start(); } catch(e) {}
+            vBtn.classList.add("recording"); 
+            
+            clearTimeout(voiceTimeout);
+            // Encerra a gravação forçadamente após 5 segundos
+            voiceTimeout = setTimeout(() => {
+                rec.stop();
+                vBtn.classList.remove("recording");
+            }, 5000);
+        };
+
         rec.onresult = e => {
             document.getElementById("searchInput").value = e.results[0][0].transcript.replace(/\.$/, "");
             performSearch();
         };
-        rec.onend = () => vBtn.classList.remove("recording");
+
+        rec.onend = () => {
+            vBtn.classList.remove("recording");
+            clearTimeout(voiceTimeout); // Limpa o temporizador se terminar antes
+        };
     }
 
-    // Carregamento Inicial Otimizado
+    // Carregamento e Checagem Contínua
     window.onload = async () => {
         await initDB();
         const savedData = await loadFromDB();
         
         if (savedData) {
-            // Se o dado salvo for uma string, é o HTML já pronto (Carga Expressa!)
             if (typeof savedData === 'string') {
                 displayCachedHtml(savedData);
             } else {
-                // Se for um ArrayBuffer antigo (de antes desta atualização), processa e converte
                 processDoc(savedData);
             }
-        } else if (!sessionStorage.getItem("skipSupabaseFetch")) {
-            // Se o aparelho não tem o arquivo, baixa da nuvem
-            await fetchLatestFromSupabase();
-        }
+        } 
 
-        // Ping no Supabase para manter o projeto acordado (prevent pause)
-        const _supabasePing = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        _supabasePing.storage.from(BUCKET).list('', { limit: 1 }).then(() => {
-            const connStatus = document.createElement("div");
-            connStatus.style.textAlign = "center";
-            connStatus.style.padding = "10px";
-            connStatus.style.fontSize = "11px";
-            connStatus.style.color = "#444";
-            connStatus.innerText = "banco de dados conectado";
-            document.body.appendChild(connStatus);
-        }).catch(e => console.error("Falha no ping do banco:", e));
+        // Checa novidades no servidor assim que abre
+        checkLatestSupabaseFile();
     };
+
+    // Atualiza automaticamente também quando o usuário volta para a aba
+    window.addEventListener('focus', () => {
+        checkLatestSupabaseFile();
+    });
 
     document.getElementById("searchInput").onkeypress = e => { if (e.key === "Enter") performSearch(); };
 </script>
