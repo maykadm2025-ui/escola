@@ -44,7 +44,7 @@
             width: 94%;
             max-width: 800px;
             margin: 0 auto;
-            position: relative; /* Permite posicionamento absoluto interno */
+            position: relative;
         }
 
         .escola-titulo {
@@ -60,16 +60,16 @@
             -webkit-text-fill-color: transparent;
         }
 
-        /* Botão + Adicionar Linha */
+        /* Botão + Adicionar Linha (Mesmo tamanho do botão Clear/Atualizar) */
         .btn-add {
             position: absolute;
             top: 0;
             right: 0;
             width: 50px;
             height: 40px;
-            background: #0a2a16;
-            color: #4ade80;
-            border: 1px solid #166534;
+            background: #111;
+            color: #fff;
+            border: 2px solid #262626;
             border-radius: 8px;
             font-weight: bold;
             font-size: 22px;
@@ -140,7 +140,7 @@
             justify-content: space-between;
             align-items: center;
             margin-top: 2px;
-            min-height: 55px;
+            min-height: 55px; /* Altura garantida para os botões caberem perfeitamente */
         }
 
         .counter-badge { font-size: 10px; font-weight: 600; color: #64748b; }
@@ -205,7 +205,7 @@
             contain-intrinsic-size: 1000px;
         }
 
-        /* Estilo das tabelas Word e Nova Tabela Inserida */
+        /* Estilo das tabelas Word e Tabela Customizada */
         table { border-collapse: collapse; width: 100%; margin: 15px 0; color: #ccc; }
         td, th { border: 1px solid #333; padding: 8px; font-size: 12px; }
         
@@ -232,7 +232,7 @@
 
 <header class="fixed-header">
     <div class="header-container">
-        <button class="btn-add" onclick="addNewRow()" title="Adicionar Linha">+</button>
+        <button class="btn-add" onclick="addNewRow()">+</button>
         <div class="escola-titulo">General</div>
         
         <div id="searchContainer" class="search-controls">
@@ -243,7 +243,7 @@
             <div class="button-actions-row">
                 <button class="btn-voice" id="voiceBtn">🎤</button>
                 <button class="btn-main" onclick="performSearch()">PESQUISAR</button>
-                <button class="btn-clear" onclick="clearFile()" title="Forçar Atualização">🔄</button>
+                <button class="btn-clear" onclick="clearFile()">🔄</button>
             </div>
             
             <div class="status-row">
@@ -278,7 +278,6 @@
     const BUCKET = "documentos";
 
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
-    let syncCheckRunning = false;
 
     // Inicialização do Banco Local
     function initDB() {
@@ -289,12 +288,10 @@
         });
     }
 
-    // Salva o HTML
     function saveToDB(data) {
         db.transaction(["documents"], "readwrite").objectStore("documents").put(data, "currentFile");
     }
 
-    // Carrega o HTML do DB
     function loadFromDB() {
         return new Promise((res) => {
             const req = db.transaction(["documents"], "readonly").objectStore("documents").get("currentFile");
@@ -303,47 +300,15 @@
     }
 
     function clearFile() {
-        const senha = prompt("Digite a senha para limpar o arquivo local:");
+        const senha = prompt("Digite a senha para trocar o arquivo:");
         if (senha === "0009") {
             db.transaction(["documents"], "readwrite").objectStore("documents").delete("currentFile");
-            localStorage.removeItem("lastProcessedFile");
+            localStorage.removeItem("lastFileName");
+            sessionStorage.setItem("skipSupabaseFetch", "true"); 
             location.reload();
         } else if (senha !== null) {
             alert("Senha incorreta!");
         }
-    }
-
-    // Adicionar Nova Tabela (Linha com Nome e Informação)
-    function addNewRow() {
-        const viewer = document.getElementById("viewer");
-        if (!viewer || viewer.style.display === "none") {
-            alert("Abra ou baixe uma lista primeiro antes de adicionar linhas.");
-            return;
-        }
-
-        const newTable = document.createElement("table");
-        newTable.style.width = "100%";
-        newTable.style.marginTop = "15px";
-        
-        // Coluna 1 com 80% / Coluna 2 com 20%
-        newTable.innerHTML = `
-            <tr>
-                <td style="width: 80%; border: 1px solid #333; padding: 8px; color: #fff;" contenteditable="true">Inserir Nome...</td>
-                <td style="width: 20%; border: 1px solid #333; padding: 8px; color: #fff; text-align: center;" contenteditable="true">Info...</td>
-            </tr>
-        `;
-
-        // Salvar automaticamente ao digitar na nova tabela
-        newTable.addEventListener("input", () => {
-            docHtml = viewer.innerHTML;
-            saveToDB(docHtml);
-        });
-
-        viewer.appendChild(newTable);
-        docHtml = viewer.innerHTML;
-        saveToDB(docHtml);
-
-        newTable.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
     // Processamento Mammoth
@@ -370,7 +335,6 @@
         }
     }
 
-    // Exibe o HTML diretamente do banco (Novo Carregamento Rápido)
     function displayCachedHtml(htmlData) {
         docHtml = htmlData;
         document.getElementById("uploadArea").style.display = "none";
@@ -378,53 +342,6 @@
         const v = document.getElementById("viewer");
         v.innerHTML = docHtml;
         v.style.display = "block";
-    }
-
-    // Sincronização Automática com Supabase
-    async function checkLatestSupabaseFile() {
-        if (syncCheckRunning || isProcessing) return;
-        syncCheckRunning = true;
-
-        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        try {
-            const { data, error } = await _supabase.storage.from(BUCKET).list('', {
-                limit: 1, 
-                sortBy: { column: 'created_at', order: 'desc' }
-            });
-
-            if (error || !data || data.length === 0) {
-                syncCheckRunning = false;
-                return;
-            }
-
-            const latestFile = data.find(f => f.name.endsWith('.docx'));
-            
-            if (latestFile) {
-                const lastFile = localStorage.getItem("lastProcessedFile");
-                
-                // Se o nome do arquivo na nuvem for diferente do que está no celular, baixa automaticamente!
-                if (latestFile.name !== lastFile) {
-                    console.log("Nova versão detectada. Atualizando...");
-                    const counter = document.getElementById("counterText");
-                    counter.innerText = "Atualizando lista...";
-                    
-                    const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
-                    
-                    if (downloadError) throw downloadError;
-
-                    if (fileData) {
-                        const arrayBuffer = await fileData.arrayBuffer();
-                        await processDoc(arrayBuffer);
-                        localStorage.setItem("lastProcessedFile", latestFile.name);
-                        counter.innerText = "Lista atualizada.";
-                    }
-                }
-            }
-        } catch (err) {
-            console.error("Erro ao sincronizar com Supabase:", err);
-        } finally {
-            syncCheckRunning = false;
-        }
     }
 
     // Upload Local e para Supabase
@@ -439,8 +356,8 @@
         const fileName = `doc_${Date.now()}.docx`;
         try {
             await _supabase.storage.from(BUCKET).upload(fileName, file);
-            // Salva na máquina local que esse foi o último arquivo processado (impede download redundante)
-            localStorage.setItem("lastProcessedFile", fileName);
+            // Salva qual foi o último arquivo gerado para não baixar ele mesmo depois
+            localStorage.setItem("lastFileName", fileName);
         } catch(ex) {
             console.error("Erro no upload:", ex);
         }
@@ -451,6 +368,76 @@
         };
         reader.readAsArrayBuffer(file);
     };
+
+    // Sincronização Inteligente (Busca arquivo novo e atualiza todos)
+    async function fetchLatestFromSupabase() {
+        if (isProcessing) return;
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        try {
+            const { data, error } = await _supabase.storage.from(BUCKET).list('', {
+                limit: 1, 
+                sortBy: { column: 'created_at', order: 'desc' }
+            });
+
+            if (error || !data || data.length === 0) return;
+
+            const latestFile = data[0];
+            const localFileName = localStorage.getItem("lastFileName");
+
+            // Se o arquivo na nuvem for diferente do que está registrado no aparelho, BAIXA AUTOMATICAMENTE!
+            if (latestFile && latestFile.name.endsWith('.docx') && latestFile.name !== localFileName) {
+                const uploadTitle = document.querySelector("#uploadArea h3");
+                if (uploadTitle) uploadTitle.innerText = "⏳ Sincronizando novo arquivo...";
+
+                const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
+                
+                if (downloadError) throw downloadError;
+
+                if (fileData) {
+                    const arrayBuffer = await fileData.arrayBuffer();
+                    await processDoc(arrayBuffer);
+                    localStorage.setItem("lastFileName", latestFile.name);
+                }
+                
+                if (uploadTitle) uploadTitle.innerText = "📄 Abrir Lista (.docx)";
+            }
+        } catch (err) {
+            console.error("Erro ao buscar arquivo do Supabase:", err);
+            const uploadTitle = document.querySelector("#uploadArea h3");
+            if (uploadTitle) uploadTitle.innerText = "📄 Abrir Lista (.docx)";
+        }
+    }
+
+    // Função de Inserir Tabela Nova
+    function addNewRow() {
+        const viewer = document.getElementById("viewer");
+        if (!viewer || viewer.style.display === "none") {
+            alert("Abra ou espere carregar uma lista primeiro.");
+            return;
+        }
+
+        const newTable = document.createElement("table");
+        newTable.style.width = "100%";
+        newTable.style.marginTop = "15px";
+        
+        newTable.innerHTML = `
+            <tr>
+                <td style="width: 80%; border: 1px solid #333; padding: 8px; color: #fff;" contenteditable="true">Inserir Nome...</td>
+                <td style="width: 20%; border: 1px solid #333; padding: 8px; color: #fff; text-align: center;" contenteditable="true">Info...</td>
+            </tr>
+        `;
+
+        newTable.addEventListener("input", () => {
+            docHtml = viewer.innerHTML;
+            saveToDB(docHtml);
+        });
+
+        viewer.appendChild(newTable);
+        docHtml = viewer.innerHTML;
+        saveToDB(docHtml);
+
+        newTable.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
 
     // Regex Fonético
     function generateSmartRegex(query) {
@@ -512,7 +499,7 @@
         matchesElements = [...exactMatches, ...phoneticMatches];
         
         if (matchesElements.length > 0) {
-            nav.style.display = "flex"; // Volta o display flex conforme sua especificação 
+            nav.style.display = "flex";
             counter.innerText = `${matchesElements.length} itens encontrados.`;
             if (/^[A-ZÀ-Ú]/.test(query.trim())) {
                 badge.style.display = "inline-block";
@@ -536,13 +523,12 @@
         document.getElementById("counterText").innerText = `${currentIdx + 1} de ${matchesElements.length}`;
     }
 
-    // Voz - Agora com tempo máximo de 5 Segundos
+    // Voz (Timer 5 Segundos)
     const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (Speech) {
         const rec = new Speech();
         rec.lang = "pt-BR";
-        let voiceTimeout; // Variável para controlar o temporizador
-
+        let voiceTimeout;
         const vBtn = document.getElementById("voiceBtn");
         
         vBtn.onclick = () => { 
@@ -550,25 +536,24 @@
             vBtn.classList.add("recording"); 
             
             clearTimeout(voiceTimeout);
-            // Encerra a gravação forçadamente após 5 segundos
             voiceTimeout = setTimeout(() => {
-                rec.stop();
+                try { rec.stop(); } catch(e) {}
                 vBtn.classList.remove("recording");
             }, 5000);
         };
-
+        
         rec.onresult = e => {
             document.getElementById("searchInput").value = e.results[0][0].transcript.replace(/\.$/, "");
             performSearch();
         };
-
+        
         rec.onend = () => {
             vBtn.classList.remove("recording");
-            clearTimeout(voiceTimeout); // Limpa o temporizador se terminar antes
+            clearTimeout(voiceTimeout);
         };
     }
 
-    // Carregamento e Checagem Contínua
+    // Carregamento Inicial
     window.onload = async () => {
         await initDB();
         const savedData = await loadFromDB();
@@ -580,15 +565,29 @@
                 processDoc(savedData);
             }
         } 
+        
+        // Em vez de só baixar se estiver vazio, verifica se há arquivo novo na nuvem ao iniciar
+        if (!sessionStorage.getItem("skipSupabaseFetch")) {
+            fetchLatestFromSupabase();
+        }
 
-        // Checa novidades no servidor assim que abre
-        checkLatestSupabaseFile();
+        // Mantém os outros aparelhos sincronizados (Verifica a cada 10 segundos)
+        setInterval(() => {
+            fetchLatestFromSupabase();
+        }, 10000);
+
+        // Ping no Supabase para manter o projeto acordado
+        const _supabasePing = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        _supabasePing.storage.from(BUCKET).list('', { limit: 1 }).then(() => {
+            const connStatus = document.createElement("div");
+            connStatus.style.textAlign = "center";
+            connStatus.style.padding = "10px";
+            connStatus.style.fontSize = "11px";
+            connStatus.style.color = "#444";
+            connStatus.innerText = "banco de dados conectado";
+            document.body.appendChild(connStatus);
+        }).catch(e => console.error("Falha no ping do banco:", e));
     };
-
-    // Atualiza automaticamente também quando o usuário volta para a aba
-    window.addEventListener('focus', () => {
-        checkLatestSupabaseFile();
-    });
 
     document.getElementById("searchInput").onkeypress = e => { if (e.key === "Enter") performSearch(); };
 </script>
