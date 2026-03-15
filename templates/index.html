@@ -194,7 +194,6 @@
             cursor: pointer;
         }
 
-        /* Removido o content-visibility para acabar com o travamento no mobile */
         #viewer {
             background: #141414;
             border-radius: 12px;
@@ -219,8 +218,31 @@
             box-shadow: 0 0 10px #f59e0b;
         }
 
+        /* REGRAS EXCLUSIVAS PARA MOBILE: ISOLAR TABELAS/LINHAS ENCONTRADAS */
         @media (max-width: 600px) {
             .main-content { margin-top: 190px; }
+            
+            /* Oculta tudo que não for marcado como resultado da busca no modo mobile */
+            #viewer.search-active > :not(.has-match) {
+                display: none !important;
+            }
+
+            /* Garante que o container com match fique visível */
+            #viewer.search-active > .has-match {
+                display: block !important; 
+                width: 100%; 
+                margin: 10px 0;
+            }
+
+            /* No caso de tabelas, aplica display de tabela */
+            #viewer.search-active > table.has-match {
+                display: table !important;
+            }
+
+            /* Dentro de tabelas com match, oculta linhas normais, revelando apenas o cabeçalho (first-child) e a linha encontrada */
+            #viewer.search-active table.has-match tr:not(:first-child):not(.has-match) {
+                display: none !important;
+            }
         }
 
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
@@ -276,7 +298,7 @@
     const BUCKET = "documentos";
 
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
-    let debounceTimer; // Timer para evitar lentidão e salvar em lotes
+    let debounceTimer; 
 
     // Inicialização do Banco Local
     function initDB() {
@@ -343,24 +365,27 @@
         v.style.display = "block";
     }
 
-    // Sincronização Inteligente (Detecta arquivo docx ou html)
+    // Sincronização Inteligente e Atualização Forçada
     async function fetchLatestFromSupabase() {
         if (isProcessing) return;
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         try {
+            // Removido o 'limit: 1' para varrer e garantir qual é exatamente o mais novo
             const { data, error } = await _supabase.storage.from(BUCKET).list('', {
-                limit: 1, 
                 sortBy: { column: 'created_at', order: 'desc' }
             });
 
             if (error || !data || data.length === 0) return;
 
-            const latestFile = data[0];
+            // Pega o arquivo mais recente que seja docx ou html
+            const latestFile = data.find(f => f.name.endsWith('.docx') || f.name.endsWith('.html'));
+            if (!latestFile) return;
+
             const localFileName = localStorage.getItem("lastFileName");
 
             // Baixa se for diferente do que está no celular
-            if (latestFile && (latestFile.name.endsWith('.docx') || latestFile.name.endsWith('.html')) && latestFile.name !== localFileName) {
-                
+            if (latestFile.name !== localFileName) {
+                isProcessing = true; // Impede múltiplas requisições encavaladas
                 const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
                 if (downloadError) throw downloadError;
 
@@ -372,19 +397,28 @@
                         const text = await fileData.text();
                         displayCachedHtml(text);
                         saveToDB(text); 
+                        isProcessing = false;
                     }
                     localStorage.setItem("lastFileName", latestFile.name);
                 }
             }
         } catch (err) {
             console.error("Erro ao buscar arquivo do Supabase:", err);
+            isProcessing = false;
         }
     }
 
-    // Faz o Upload da versão HTML atualizada para sincronizar as tabelas adicionadas
+    // Atualiza imediatamente quando a janela do celular/PC volta ao foco
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === 'visible') {
+            fetchLatestFromSupabase();
+        }
+    });
+
+    // Faz o Upload da versão HTML atualizada
     async function uploadHtmlToSupabase(htmlContent) {
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        const fileName = `doc_${Date.now()}.html`; // Salva a versão editada como HTML puro e limpo
+        const fileName = `doc_${Date.now()}.html`; 
         const counter = document.getElementById("counterText");
         
         counter.innerText = "Salvando na nuvem...";
@@ -392,7 +426,7 @@
         try {
             const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
             await _supabase.storage.from(BUCKET).upload(fileName, blob);
-            localStorage.setItem("lastFileName", fileName); // O aparelho que upou sabe que está na última versão
+            localStorage.setItem("lastFileName", fileName); 
             
             counter.innerText = "Sincronizado!";
             setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
@@ -402,15 +436,18 @@
         }
     }
 
-    // Função Otimizada para Salvar (Não trava o mobile)
+    // Função Otimizada para Salvar
     function debounceSave() {
         clearTimeout(debounceTimer);
-        // Espera 1.5 segundos após a pessoa parar de digitar para salvar (Acaba com os travamentos)
         debounceTimer = setTimeout(() => {
             const viewer = document.getElementById("viewer");
-            
-            // Remove marcações amarelas de busca antes de salvar para não bugar o arquivo oficial
             const clone = viewer.cloneNode(true);
+            
+            // Remove as classes de pesquisa antes de salvar
+            clone.classList.remove("search-active");
+            clone.querySelectorAll('.has-match').forEach(el => el.classList.remove('has-match'));
+            
+            // Remove marcações amarelas
             const matches = clone.querySelectorAll('.match');
             matches.forEach(el => {
                 const parent = el.parentNode;
@@ -419,8 +456,8 @@
             });
             
             docHtml = clone.innerHTML;
-            saveToDB(docHtml); // Salva local
-            uploadHtmlToSupabase(docHtml); // Envia a versão para a nuvem sincronizar todos os aparelhos
+            saveToDB(docHtml); 
+            uploadHtmlToSupabase(docHtml); 
         }, 1500); 
     }
 
@@ -435,6 +472,7 @@
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         const fileName = `doc_${Date.now()}.docx`;
         try {
+            document.getElementById("counterText").innerText = "Enviando arquivo...";
             await _supabase.storage.from(BUCKET).upload(fileName, file);
             localStorage.setItem("lastFileName", fileName);
         } catch(ex) {
@@ -448,7 +486,7 @@
         reader.readAsArrayBuffer(file);
     };
 
-    // Adicionar Nova Tabela (Linha com Nome e Informação)
+    // Adicionar Nova Tabela
     function addNewRow() {
         const viewer = document.getElementById("viewer");
         if (!viewer || viewer.style.display === "none") {
@@ -467,14 +505,9 @@
             </tr>
         `;
 
-        // Ativa a função inteligente que salva em background sem travar
         newTable.addEventListener("input", debounceSave);
-
         viewer.appendChild(newTable);
-        
-        // Dispara o salvamento para que a linha vazia recém-criada vá logo pra nuvem
         debounceSave();
-
         newTable.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
@@ -500,12 +533,19 @@
         const badge = document.getElementById("personBadge");
         const counter = document.getElementById("counterText");
 
-        if (!query.trim()) return;
-
+        // Reseta o visualizador para o HTML salvo original
         viewer.innerHTML = docHtml;
-        matchesElements = []; currentIdx = -1;
+        viewer.classList.remove("search-active");
+        
+        matchesElements = []; 
+        currentIdx = -1;
         badge.style.display = "none";
         nav.style.display = "none";
+
+        if (!query.trim()) {
+            counter.innerText = "Pronto.";
+            return;
+        }
 
         const regex = generateSmartRegex(query);
         const walker = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
@@ -537,11 +577,31 @@
 
         matchesElements = [...exactMatches, ...phoneticMatches];
         
-        // Reatribui a função de salvar para não perder as edições caso o usuário edite tabelas que já existem
+        // Reatribui eventos aos editáveis após recarregar docHtml
         const editables = viewer.querySelectorAll('td[contenteditable="true"]');
         editables.forEach(td => td.addEventListener("input", debounceSave));
         
         if (matchesElements.length > 0) {
+            viewer.classList.add("search-active");
+            
+            // Marca o caminho na árvore DOM para exibição exclusiva no modo mobile
+            matchesElements.forEach(el => {
+                let tr = el.closest('tr');
+                let table = el.closest('table');
+                
+                if (tr) tr.classList.add('has-match');
+                if (table) table.classList.add('has-match');
+                
+                // Encontra a tag mestre diretamente abaixo do #viewer
+                let current = el;
+                while (current && current.parentElement && current.parentElement.id !== 'viewer') {
+                    current = current.parentElement;
+                }
+                if (current && current.parentElement && current.parentElement.id === 'viewer') {
+                    current.classList.add('has-match');
+                }
+            });
+
             nav.style.display = "flex";
             counter.innerText = `${matchesElements.length} itens encontrados.`;
             if (/^[A-ZÀ-Ú]/.test(query.trim())) {
@@ -566,7 +626,7 @@
         document.getElementById("counterText").innerText = `${currentIdx + 1} de ${matchesElements.length}`;
     }
 
-    // Voz (Timer 5 Segundos)
+    // Voz
     const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (Speech) {
         const rec = new Speech();
@@ -613,7 +673,7 @@
             fetchLatestFromSupabase();
         }
 
-        // Mantém os outros aparelhos sincronizados (Verifica a cada 10 segundos discretamente)
+        // Intervalo de verificação de background (10 segundos)
         setInterval(() => {
             fetchLatestFromSupabase();
         }, 10000);
