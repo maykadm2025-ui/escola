@@ -369,6 +369,9 @@
         const v = document.getElementById("viewer");
         v.innerHTML = docHtml;
         v.style.display = "block";
+        const mr = document.getElementById("mobileResults");
+        mr.style.display = "none";
+        mr.innerHTML = "";
     }
 
     // Sincronização Inteligente (Detecta arquivo docx ou html)
@@ -569,9 +572,8 @@
                 document.getElementById("pName").innerText = query;
             }
 
-            // ── MOBILE: oculta o viewer e exibe apenas os resultados encontrados ──
+            // ── MOBILE: mantém o viewer intacto e exibe apenas os resultados encontrados ──
             if (isMobile) {
-                viewer.style.display = "none";
                 mobileResults.style.display = "block";
 
                 matchesElements.forEach((el, idx) => {
