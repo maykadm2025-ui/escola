@@ -385,10 +385,10 @@
             const latestFile = data[0];
             const localFileName = localStorage.getItem("lastFileName");
 
-            // [CORREÇÃO F5] Na primeira chamada de cada sessão (F5), força o download
-            // mesmo que o localStorage já tenha o nome do arquivo.
+            // Baixa se o arquivo do Supabase for diferente do localStorage (outro dispositivo subiu algo novo)
+            // OU se ainda não sincronizou nessa sessão (garante que o F5 sempre busca o mais recente)
             const syncedThisSession = sessionStorage.getItem("syncedFile");
-            const needsDownload = latestFile.name !== localFileName || !syncedThisSession;
+            const needsDownload = latestFile.name !== localFileName || (latestFile.name === localFileName && !syncedThisSession);
 
             if (latestFile && (latestFile.name.endsWith('.docx') || latestFile.name.endsWith('.html')) && needsDownload) {
                 
