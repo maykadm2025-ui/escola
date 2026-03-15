@@ -492,6 +492,7 @@
         return new RegExp(`(h?${pattern})`, "gi");
     }
 
+    // A BUSCA OTIMIZADA PARA MOBILE COMEÇA AQUI
     function performSearch() {
         if (isProcessing) return;
         const query = document.getElementById("searchInput").value;
@@ -500,58 +501,88 @@
         const badge = document.getElementById("personBadge");
         const counter = document.getElementById("counterText");
 
-        if (!query.trim()) return;
-
-        viewer.innerHTML = docHtml;
-        matchesElements = []; currentIdx = -1;
-        badge.style.display = "none";
-        nav.style.display = "none";
-
-        const regex = generateSmartRegex(query);
-        const walker = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
-        const nodes = []; 
-        let n;
-        while (n = walker.nextNode()) nodes.push(n);
-
-        nodes.forEach(node => {
-            if (regex.test(node.nodeValue)) {
-                const span = document.createElement("span");
-                span.innerHTML = node.nodeValue.replace(regex, '<span class="match">$1</span>');
-                node.parentNode.replaceChild(span, node);
-            }
-        });
-
-        const allMatches = Array.from(viewer.querySelectorAll(".match"));
-        const exactQuery = query.trim().toLowerCase();
-        
-        const exactMatches = [];
-        const phoneticMatches = [];
-        
-        allMatches.forEach(el => {
-            if (el.textContent.toLowerCase().includes(exactQuery)) {
-                exactMatches.push(el);
-            } else {
-                phoneticMatches.push(el);
-            }
-        });
-
-        matchesElements = [...exactMatches, ...phoneticMatches];
-        
-        // Reatribui a função de salvar para não perder as edições caso o usuário edite tabelas que já existem
-        const editables = viewer.querySelectorAll('td[contenteditable="true"]');
-        editables.forEach(td => td.addEventListener("input", debounceSave));
-        
-        if (matchesElements.length > 0) {
-            nav.style.display = "flex";
-            counter.innerText = `${matchesElements.length} itens encontrados.`;
-            if (/^[A-ZÀ-Ú]/.test(query.trim())) {
-                badge.style.display = "inline-block";
-                document.getElementById("pName").innerText = query;
-            }
-            navigate(1);
-        } else {
-            counter.innerText = "Não encontrado.";
+        if (!query.trim()) {
+            viewer.innerHTML = docHtml; // Reseta a tela
+            nav.style.display = "none";
+            badge.style.display = "none";
+            counter.innerText = "Pronto.";
+            // Garante que se o usuário limpar a busca e editar depois, vai salvar corretamente
+            const editables = viewer.querySelectorAll('td[contenteditable="true"]');
+            editables.forEach(td => td.addEventListener("input", debounceSave));
+            return;
         }
+
+        counter.innerText = "Buscando...";
+        isProcessing = true; // Impede que múltiplos cliques simultâneos criem filas de travamento
+
+        // setTimeout(..., 15) libera a interface para atualizar a mensagem "Buscando..." antes do trabalho pesado
+        setTimeout(() => {
+            try {
+                // ESTRATÉGIA DE ALTA PERFORMANCE (DETACHED DOM):
+                // Criamos um contêiner invisível. Alterar elementos fora da tela é infinitamente mais rápido 
+                // para o processador do celular, pois não recalcula o visual do site (reflow/repaint).
+                const tempDiv = document.createElement("div");
+                tempDiv.innerHTML = docHtml;
+
+                matchesElements = []; currentIdx = -1;
+                badge.style.display = "none";
+                nav.style.display = "none";
+
+                const regex = generateSmartRegex(query);
+                
+                // O TreeWalker varre a cópia invisível
+                const walker = document.createTreeWalker(tempDiv, NodeFilter.SHOW_TEXT, null, false);
+                const nodes = []; 
+                let n;
+                while (n = walker.nextNode()) nodes.push(n);
+
+                nodes.forEach(node => {
+                    if (regex.test(node.nodeValue)) {
+                        const span = document.createElement("span");
+                        span.innerHTML = node.nodeValue.replace(regex, '<span class="match">$1</span>');
+                        node.parentNode.replaceChild(span, node);
+                    }
+                });
+
+                // Agora jogamos o resultado processado de volta na tela em UMA única pancada
+                viewer.innerHTML = tempDiv.innerHTML;
+
+                const allMatches = Array.from(viewer.querySelectorAll(".match"));
+                const exactQuery = query.trim().toLowerCase();
+                
+                const exactMatches = [];
+                const phoneticMatches = [];
+                
+                allMatches.forEach(el => {
+                    if (el.textContent.toLowerCase().includes(exactQuery)) {
+                        exactMatches.push(el);
+                    } else {
+                        phoneticMatches.push(el);
+                    }
+                });
+
+                matchesElements = [...exactMatches, ...phoneticMatches];
+                
+                // Reatribui a função de salvar nas tabelas geradas na tela nova
+                const editables = viewer.querySelectorAll('td[contenteditable="true"]');
+                editables.forEach(td => td.addEventListener("input", debounceSave));
+                
+                if (matchesElements.length > 0) {
+                    nav.style.display = "flex";
+                    counter.innerText = `${matchesElements.length} itens encontrados.`;
+                    if (/^[A-ZÀ-Ú]/.test(query.trim())) {
+                        badge.style.display = "inline-block";
+                        document.getElementById("pName").innerText = query;
+                    }
+                    navigate(1);
+                } else {
+                    counter.innerText = "Não encontrado.";
+                }
+            } finally {
+                // Libera o sistema para nova busca independente se achou ou deu erro
+                isProcessing = false;
+            }
+        }, 15);
     }
 
     function navigate(dir) {
