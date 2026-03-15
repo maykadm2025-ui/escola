@@ -194,12 +194,37 @@
             cursor: pointer;
         }
 
+        /* Removido o content-visibility para acabar com o travamento no mobile */
         #viewer {
             background: #141414;
             border-radius: 12px;
             padding: 15px;
             border: 1px solid #262626;
             display: none;
+        }
+
+        /* Painel de resultados mobile */
+        #mobileResults {
+            display: none;
+            background: #141414;
+            border-radius: 12px;
+            padding: 15px;
+            border: 1px solid #262626;
+        }
+
+        .mobile-result-item {
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: #ccc;
+        }
+
+        .mobile-result-item.active-item {
+            border-color: #f59e0b;
+            box-shadow: 0 0 8px rgba(245,158,11,0.3);
         }
 
         /* Estilo das tabelas Word e Tabela Customizada */
@@ -267,6 +292,7 @@
     </div>
 
     <div id="viewer"></div>
+    <div id="mobileResults"></div>
 </main>
 
 <script>
@@ -275,7 +301,10 @@
     const BUCKET = "documentos";
 
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
-    let debounceTimer; 
+    let debounceTimer;
+
+    // Detecta se é mobile
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 600;
 
     // Inicialização do Banco Local
     function initDB() {
@@ -342,7 +371,7 @@
         v.style.display = "block";
     }
 
-    // Sincronização Inteligente
+    // Sincronização Inteligente (Detecta arquivo docx ou html)
     async function fetchLatestFromSupabase() {
         if (isProcessing) return;
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -379,10 +408,9 @@
         }
     }
 
-    // Faz o Upload da versão HTML atualizada
     async function uploadHtmlToSupabase(htmlContent) {
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        const fileName = `doc_${Date.now()}.html`; 
+        const fileName = `doc_${Date.now()}.html`;
         const counter = document.getElementById("counterText");
         
         counter.innerText = "Salvando na nuvem...";
@@ -390,7 +418,7 @@
         try {
             const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
             await _supabase.storage.from(BUCKET).upload(fileName, blob);
-            localStorage.setItem("lastFileName", fileName); 
+            localStorage.setItem("lastFileName", fileName);
             
             counter.innerText = "Sincronizado!";
             setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
@@ -400,7 +428,6 @@
         }
     }
 
-    // Função Otimizada para Salvar
     function debounceSave() {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
@@ -415,12 +442,11 @@
             });
             
             docHtml = clone.innerHTML;
-            saveToDB(docHtml); 
-            uploadHtmlToSupabase(docHtml); 
+            saveToDB(docHtml);
+            uploadHtmlToSupabase(docHtml);
         }, 1500); 
     }
 
-    // Upload Local
     const fileInput = document.getElementById("fileInput");
     document.getElementById("uploadArea").onclick = () => fileInput.click();
 
@@ -444,7 +470,6 @@
         reader.readAsArrayBuffer(file);
     };
 
-    // Adicionar Nova Tabela
     function addNewRow() {
         const viewer = document.getElementById("viewer");
         if (!viewer || viewer.style.display === "none") {
@@ -464,6 +489,7 @@
         `;
 
         newTable.addEventListener("input", debounceSave);
+
         viewer.appendChild(newTable);
         debounceSave();
         newTable.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -483,97 +509,120 @@
         return new RegExp(`(h?${pattern})`, "gi");
     }
 
-    // A BUSCA NOVA E EXTREMAMENTE RÁPIDA (String Array Split)
     function performSearch() {
         if (isProcessing) return;
         const query = document.getElementById("searchInput").value;
         const viewer = document.getElementById("viewer");
+        const mobileResults = document.getElementById("mobileResults");
         const nav = document.getElementById("navButtons");
         const badge = document.getElementById("personBadge");
         const counter = document.getElementById("counterText");
 
-        if (!query.trim()) {
-            viewer.innerHTML = docHtml; 
-            nav.style.display = "none";
-            badge.style.display = "none";
-            counter.innerText = "Pronto.";
-            const editables = viewer.querySelectorAll('td[contenteditable="true"]');
-            editables.forEach(td => td.addEventListener("input", debounceSave));
-            return;
-        }
+        if (!query.trim()) return;
 
-        counter.innerText = "Buscando...";
-        isProcessing = true; 
+        viewer.innerHTML = docHtml;
+        matchesElements = []; currentIdx = -1;
+        badge.style.display = "none";
+        nav.style.display = "none";
+        mobileResults.style.display = "none";
+        mobileResults.innerHTML = "";
 
-        // Aguarda 15ms para o celular poder mostrar o texto "Buscando..."
-        setTimeout(() => {
-            try {
-                const regex = generateSmartRegex(query);
-                
-                // O SEGREDO DA VELOCIDADE: Quebra o HTML inteiro em um array.
-                // Índices PARES são o texto visível. Índices ÍMPARES são as <tags> do HTML.
-                // Nós iteramos apenas no texto visível, evitando destruir o HTML.
-                const parts = docHtml.split(/(<[^>]*>)/);
-                
-                for (let i = 0; i < parts.length; i += 2) {
-                    if (parts[i]) { // Se existir texto aqui
-                        parts[i] = parts[i].replace(regex, '<span class="match">$1</span>');
-                    }
-                }
-                
-                // Cola o array inteiro devolta e renderiza UMA única vez.
-                viewer.innerHTML = parts.join('');
+        const regex = generateSmartRegex(query);
+        const walker = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
+        const nodes = []; 
+        let n;
+        while (n = walker.nextNode()) nodes.push(n);
 
-                matchesElements = []; currentIdx = -1;
-                badge.style.display = "none";
-                nav.style.display = "none";
+        nodes.forEach(node => {
+            if (regex.test(node.nodeValue)) {
+                const span = document.createElement("span");
+                span.innerHTML = node.nodeValue.replace(regex, '<span class="match">$1</span>');
+                node.parentNode.replaceChild(span, node);
+            }
+        });
 
-                const allMatches = Array.from(viewer.querySelectorAll(".match"));
-                const exactQuery = query.trim().toLowerCase();
-                
-                const exactMatches = [];
-                const phoneticMatches = [];
-                
-                allMatches.forEach(el => {
-                    if (el.textContent.toLowerCase().includes(exactQuery)) {
-                        exactMatches.push(el);
-                    } else {
-                        phoneticMatches.push(el);
-                    }
+        const allMatches = Array.from(viewer.querySelectorAll(".match"));
+        const exactQuery = query.trim().toLowerCase();
+        
+        const exactMatches = [];
+        const phoneticMatches = [];
+        
+        allMatches.forEach(el => {
+            if (el.textContent.toLowerCase().includes(exactQuery)) {
+                exactMatches.push(el);
+            } else {
+                phoneticMatches.push(el);
+            }
+        });
+
+        matchesElements = [...exactMatches, ...phoneticMatches];
+        
+        // Reatribui a função de salvar
+        const editables = viewer.querySelectorAll('td[contenteditable="true"]');
+        editables.forEach(td => td.addEventListener("input", debounceSave));
+
+        if (matchesElements.length > 0) {
+            nav.style.display = "flex";
+            counter.innerText = `${matchesElements.length} itens encontrados.`;
+            if (/^[A-ZÀ-Ú]/.test(query.trim())) {
+                badge.style.display = "inline-block";
+                document.getElementById("pName").innerText = query;
+            }
+
+            // ── MOBILE: oculta o viewer e exibe apenas os resultados encontrados ──
+            if (isMobile) {
+                viewer.style.display = "none";
+                mobileResults.style.display = "block";
+
+                matchesElements.forEach((el, idx) => {
+                    // Pega o contexto: linha da tabela ou parágrafo pai
+                    const row = el.closest("tr") || el.closest("p") || el.closest("li") || el.parentElement;
+                    const item = document.createElement("div");
+                    item.className = "mobile-result-item";
+                    item.dataset.idx = idx;
+                    item.innerHTML = row ? row.innerHTML : el.outerHTML;
+                    mobileResults.appendChild(item);
                 });
 
-                matchesElements = [...exactMatches, ...phoneticMatches];
-                
-                // Reatribui a função de salvar nas edições
-                const editables = viewer.querySelectorAll('td[contenteditable="true"]');
-                editables.forEach(td => td.addEventListener("input", debounceSave));
-                
-                if (matchesElements.length > 0) {
-                    nav.style.display = "flex";
-                    counter.innerText = `${matchesElements.length} itens encontrados.`;
-                    if (/^[A-ZÀ-Ú]/.test(query.trim())) {
-                        badge.style.display = "inline-block";
-                        document.getElementById("pName").innerText = query;
-                    }
-                    navigate(1);
-                } else {
-                    counter.innerText = "Não encontrado.";
-                }
-            } finally {
-                isProcessing = false;
+                // Troca navigate para trabalhar com os cards mobile
+                currentIdx = -1;
+                navigate(1);
+            } else {
+                navigate(1);
             }
-        }, 15);
+        } else {
+            counter.innerText = "Não encontrado.";
+        }
     }
 
     function navigate(dir) {
         if (!matchesElements.length) return;
-        if (currentIdx >= 0) matchesElements[currentIdx].classList.remove("active");
-        currentIdx += dir;
-        if (currentIdx >= matchesElements.length) currentIdx = 0;
-        if (currentIdx < 0) currentIdx = matchesElements.length - 1;
-        const el = matchesElements[currentIdx];
-        el.classList.add("active");
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        const mobileResults = document.getElementById("mobileResults");
+
+        if (isMobile && mobileResults.style.display === "block") {
+            // Remove destaque anterior no card
+            const prevCard = mobileResults.querySelector(".active-item");
+            if (prevCard) prevCard.classList.remove("active-item");
+
+            currentIdx += dir;
+            if (currentIdx >= matchesElements.length) currentIdx = 0;
+            if (currentIdx < 0) currentIdx = matchesElements.length - 1;
+
+            const card = mobileResults.querySelector(`[data-idx="${currentIdx}"]`);
+            if (card) {
+                card.classList.add("active-item");
+                card.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+        } else {
+            if (currentIdx >= 0) matchesElements[currentIdx].classList.remove("active");
+            currentIdx += dir;
+            if (currentIdx >= matchesElements.length) currentIdx = 0;
+            if (currentIdx < 0) currentIdx = matchesElements.length - 1;
+            const el = matchesElements[currentIdx];
+            el.classList.add("active");
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+
         document.getElementById("counterText").innerText = `${currentIdx + 1} de ${matchesElements.length}`;
     }
 
