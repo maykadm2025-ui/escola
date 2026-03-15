@@ -9,7 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.21/mammoth.browser.min.js"></script>
     
     <style>
-        /* ── RESET E PERFORMANCE CSS ── */
+        /* ── RESET TOTAL ── */
         * { 
             margin: 0;
             padding: 0;
@@ -25,7 +25,7 @@
             overflow-x: hidden;
         }
 
-        /* ── CABEÇALHO FIXO ── */
+        /* ── CABEÇALHO COLADO NO TOPO ── */
         .fixed-header {
             position: fixed;
             top: 0;
@@ -37,6 +37,7 @@
             border-bottom: 1px solid #262626;
             z-index: 1000;
             padding: 8px 0;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8);
         }
 
         .header-container {
@@ -50,6 +51,7 @@
             text-align: center;
             font-size: 2.0rem;
             font-weight: 800;
+            letter-spacing: 1px;
             margin-bottom: 6px;
             color: #fff;
             text-transform: uppercase;
@@ -58,6 +60,7 @@
             -webkit-text-fill-color: transparent;
         }
 
+        /* Botão + Adicionar Linha */
         .btn-add {
             position: absolute;
             top: 0;
@@ -74,13 +77,18 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: transform 0.1s;
         }
+        .btn-add:active { transform: scale(0.96); }
 
+        /* Controles de Busca */
         .search-controls {
             display: none;
             flex-direction: column;
             gap: 6px;
         }
+
+        .input-full-row { width: 100%; }
 
         input[type="text"] {
             width: 100%;
@@ -90,6 +98,12 @@
             border-radius: 8px;
             color: #fff;
             font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #6366f1;
         }
 
         .button-actions-row {
@@ -106,6 +120,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            font-size: 13px;
             height: 40px;
             transition: transform 0.1s;
         }
@@ -118,11 +133,13 @@
         .btn-main { background: #6366f1; color: white; flex: 1; text-transform: uppercase; }
         .btn-clear { background: #2a0a0a; color: #fca5a5; width: 50px; font-size: 16px; }
 
+        /* Status e Navegação */
         .status-row {
             position: relative;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-top: 2px;
             min-height: 55px; 
         }
 
@@ -134,6 +151,7 @@
             transform: translateX(-50%);
             display: flex; 
             gap: 4px; 
+            z-index: 10;
         }
         
         .btn-nav {
@@ -142,6 +160,7 @@
             padding: 0 40px;
             height: 55px;
             border-radius: 5px;
+            font-size: 10px;
             border: 1px solid #333;
         }
 
@@ -152,14 +171,18 @@
             border-radius: 4px;
             font-size: 10px;
             font-weight: 700;
+            border: 1px solid rgba(16, 185, 129, 0.2);
             display: none;
         }
 
-        /* ── CONTEÚDO ── */
+        #systemLog { display: none !important; }
+
+        /* ── CONTEÚDO PRINCIPAL ── */
         .main-content {
             width: 95%;
             max-width: 900px;
             margin: 180px auto 20px auto;
+            padding-bottom: 30px;
         }
 
         .upload-card {
@@ -168,6 +191,7 @@
             border-radius: 15px;
             padding: 40px 20px;
             text-align: center;
+            cursor: pointer;
         }
 
         #viewer {
@@ -178,14 +202,27 @@
             display: none;
         }
 
+        /* Estilo das tabelas Word e Tabela Customizada */
         table { border-collapse: collapse; width: 100%; margin: 15px 0; color: #ccc; }
         td, th { border: 1px solid #333; padding: 8px; font-size: 12px; }
         
-        .match { background: #fef08a; color: #000; font-weight: bold; scroll-margin-top: 150px; }
-        .match.active { background: #f59e0b; color: #fff; box-shadow: 0 0 10px #f59e0b; }
+        .match { 
+            background: #fef08a; 
+            color: #000; 
+            font-weight: bold; 
+            scroll-margin-top: 150px; 
+        }
+        .match.active { 
+            background: #f59e0b; 
+            color: #fff; 
+            box-shadow: 0 0 10px #f59e0b;
+        }
+
+        @media (max-width: 600px) {
+            .main-content { margin-top: 190px; }
+        }
 
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-        @media (max-width: 600px) { .main-content { margin-top: 190px; } }
     </style>
 </head>
 <body>
@@ -208,12 +245,16 @@
             
             <div class="status-row">
                 <div id="counterText" class="counter-badge">Pronto.</div>
+                
                 <div id="navButtons" class="nav-cluster" style="display: none;">
                     <button class="btn-nav" onclick="navigate(-1)">◀</button>
                     <button class="btn-nav" onclick="navigate(1)">▶</button>
                 </div>
+
                 <div id="personBadge" class="person-tag">Aluno: <span id="pName"></span></div>
             </div>
+            
+            <div id="systemLog"></div>
         </div>
     </div>
 </header>
@@ -221,8 +262,10 @@
 <main class="main-content">
     <div id="uploadArea" class="upload-card">
         <h3>📄 Abrir Lista (.docx)</h3>
+        <p>Clique para selecionar o arquivo</p>
         <input type="file" id="fileInput" accept=".docx" style="display:none"/>
     </div>
+
     <div id="viewer"></div>
 </main>
 
@@ -234,7 +277,7 @@
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
     let debounceTimer;
 
-    // Banco Local
+    // Inicialização do Banco Local
     function initDB() {
         return new Promise((res) => {
             const req = indexedDB.open("WordSearchDB", 1);
@@ -243,7 +286,9 @@
         });
     }
 
-    function saveToDB(data) { db.transaction(["documents"], "readwrite").objectStore("documents").put(data, "currentFile"); }
+    function saveToDB(data) {
+        db.transaction(["documents"], "readwrite").objectStore("documents").put(data, "currentFile");
+    }
 
     function loadFromDB() {
         return new Promise((res) => {
@@ -253,151 +298,274 @@
     }
 
     function clearFile() {
-        if (prompt("Senha:") === "0009") {
+        const senha = prompt("Digite a senha para trocar o arquivo:");
+        if (senha === "0009") {
             db.transaction(["documents"], "readwrite").objectStore("documents").delete("currentFile");
             localStorage.removeItem("lastFileName");
             sessionStorage.setItem("skipSupabaseFetch", "true"); 
             location.reload();
+        } else if (senha !== null) {
+            alert("Senha incorreta!");
         }
     }
 
+    // Função auxiliar centralizada para renderizar HTML rápido e garantir os eventos de edição salvos
     function renderHtml(htmlContent) {
         const viewer = document.getElementById("viewer");
         viewer.innerHTML = htmlContent;
-        viewer.querySelectorAll('td[contenteditable="true"]').forEach(td => td.addEventListener("input", debounceSave));
+        const editables = viewer.querySelectorAll('td[contenteditable="true"]');
+        editables.forEach(td => td.addEventListener("input", debounceSave));
     }
 
+    // Processamento Mammoth (Word Original)
     async function processDoc(buf) {
         document.getElementById("uploadArea").style.display = "none";
         document.getElementById("searchContainer").style.display = "flex";
         isProcessing = true;
+
         try {
             const result = await mammoth.convertToHtml({ arrayBuffer: buf });
             docHtml = result.value;
             saveToDB(docHtml); 
             renderHtml(docHtml);
             document.getElementById("viewer").style.display = "block";
-        } finally { isProcessing = false; }
+        } catch (err) {
+            console.error(err);
+            document.getElementById("uploadArea").style.display = "block";
+            document.getElementById("searchContainer").style.display = "none";
+        } finally {
+            isProcessing = false;
+        }
     }
 
+    function displayCachedHtml(htmlData) {
+        docHtml = htmlData;
+        document.getElementById("uploadArea").style.display = "none";
+        document.getElementById("searchContainer").style.display = "flex";
+        renderHtml(docHtml);
+        document.getElementById("viewer").style.display = "block";
+    }
+
+    // Sincronização Inteligente (Detecta arquivo docx ou html)
     async function fetchLatestFromSupabase() {
         if (isProcessing) return;
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         try {
-            const { data } = await _supabase.storage.from(BUCKET).list('', { limit: 1, sortBy: { column: 'created_at', order: 'desc' } });
-            if (data && data[0] && data[0].name !== localStorage.getItem("lastFileName")) {
-                const { data: fileData } = await _supabase.storage.from(BUCKET).download(data[0].name);
+            const { data, error } = await _supabase.storage.from(BUCKET).list('', {
+                limit: 1, 
+                sortBy: { column: 'created_at', order: 'desc' }
+            });
+
+            if (error || !data || data.length === 0) return;
+
+            const latestFile = data[0];
+            const localFileName = localStorage.getItem("lastFileName");
+
+            if (latestFile && (latestFile.name.endsWith('.docx') || latestFile.name.endsWith('.html')) && latestFile.name !== localFileName) {
+                const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
+                if (downloadError) throw downloadError;
+
                 if (fileData) {
-                    const text = data[0].name.endsWith('.html') ? await fileData.text() : null;
-                    if (text) { docHtml = text; renderHtml(text); saveToDB(text); }
-                    localStorage.setItem("lastFileName", data[0].name);
+                    if (latestFile.name.endsWith('.docx')) {
+                        const arrayBuffer = await fileData.arrayBuffer();
+                        await processDoc(arrayBuffer);
+                    } else if (latestFile.name.endsWith('.html')) {
+                        const text = await fileData.text();
+                        displayCachedHtml(text);
+                        saveToDB(text); 
+                    }
+                    localStorage.setItem("lastFileName", latestFile.name);
                 }
             }
-        } catch (e) {}
+        } catch (err) {
+            console.error("Erro ao buscar arquivo do Supabase:", err);
+        }
     }
 
+    // Faz o Upload da versão HTML atualizada para sincronizar as tabelas adicionadas
     async function uploadHtmlToSupabase(htmlContent) {
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         const fileName = `doc_${Date.now()}.html`;
+        const counter = document.getElementById("counterText");
+        
+        counter.innerText = "Salvando na nuvem...";
+
         try {
             const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
             await _supabase.storage.from(BUCKET).upload(fileName, blob);
-            localStorage.setItem("lastFileName", fileName);
-        } catch(e) {}
+            localStorage.setItem("lastFileName", fileName); 
+            
+            counter.innerText = "Sincronizado!";
+            setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
+        } catch(ex) {
+            console.error("Erro no upload de atualização:", ex);
+            counter.innerText = "Erro ao salvar na nuvem.";
+        }
     }
 
+    // Função para Salvar
     function debounceSave() {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
-            const clone = document.getElementById("viewer").cloneNode(true);
-            clone.querySelectorAll('.match').forEach(el => {
-                const p = el.parentNode;
-                while(el.firstChild) p.insertBefore(el.firstChild, el);
-                p.removeChild(el);
+            const viewer = document.getElementById("viewer");
+            
+            // Remove marcações amarelas temporárias antes de salvar o oficial
+            const clone = viewer.cloneNode(true);
+            const matches = clone.querySelectorAll('.match');
+            matches.forEach(el => {
+                const parent = el.parentNode;
+                while(el.firstChild) parent.insertBefore(el.firstChild, el);
+                parent.removeChild(el);
             });
+            
             docHtml = clone.innerHTML;
             saveToDB(docHtml); 
             uploadHtmlToSupabase(docHtml); 
         }, 1500); 
     }
 
-    document.getElementById("uploadArea").onclick = () => document.getElementById("fileInput").click();
-    document.getElementById("fileInput").onchange = async (e) => {
+    // Upload Local e para Supabase do Documento Original
+    const fileInput = document.getElementById("fileInput");
+    document.getElementById("uploadArea").onclick = () => fileInput.click();
+
+    fileInput.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        const name = `doc_${Date.now()}.docx`;
-        await _supabase.storage.from(BUCKET).upload(name, file);
-        localStorage.setItem("lastFileName", name);
+        const fileName = `doc_${Date.now()}.docx`;
+        try {
+            await _supabase.storage.from(BUCKET).upload(fileName, file);
+            localStorage.setItem("lastFileName", fileName);
+        } catch(ex) {
+            console.error("Erro no upload:", ex);
+        }
+
         const reader = new FileReader();
-        reader.onload = ev => processDoc(ev.target.result);
+        reader.onload = ev => { processDoc(ev.target.result); };
         reader.readAsArrayBuffer(file);
     };
 
+    // Adicionar Nova Tabela
     function addNewRow() {
-        const v = document.getElementById("viewer");
-        if (!v.innerHTML) return;
-        const nt = document.createElement("table");
-        nt.innerHTML = `<tr><td style="width:80%;color:#fff;" contenteditable="true">Novo Nome...</td><td style="width:20%;color:#fff;text-align:center;" contenteditable="true">Info</td></tr>`;
-        nt.querySelectorAll('td').forEach(td => td.addEventListener("input", debounceSave));
-        v.appendChild(nt);
+        const viewer = document.getElementById("viewer");
+        if (!viewer || viewer.style.display === "none") {
+            alert("Abra ou espere carregar uma lista primeiro.");
+            return;
+        }
+
+        const newTable = document.createElement("table");
+        newTable.style.width = "100%";
+        newTable.style.marginTop = "15px";
+        
+        newTable.innerHTML = `
+            <tr>
+                <td style="width: 80%; border: 1px solid #333; padding: 8px; color: #fff;" contenteditable="true">Inserir Nome...</td>
+                <td style="width: 20%; border: 1px solid #333; padding: 8px; color: #fff; text-align: center;" contenteditable="true">Info...</td>
+            </tr>
+        `;
+
+        newTable.querySelectorAll('td').forEach(td => td.addEventListener("input", debounceSave));
+        viewer.appendChild(newTable);
         debounceSave();
-        nt.scrollIntoView({ behavior: "smooth", block: "center" });
+        newTable.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
+    // Regex Fonético (Agora retorna string para ser ultra veloz na substituição HTML)
     function generateSmartRegexStr(query) {
         let q = query.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\./g, "").toLowerCase().trim();
         q = q.replace(/(.)\1+/g, "$1").replace(/^h/, "");
-        const mapa = { 'a':'[aáàãâ]','e':'[iyeéê]','i':'[eiíy]','y':'[eyií]','o':'[oóôõ]','u':'[uúüw]','w':'[vwuúü]','c':'[cçcskq]','k':'[ckq]','q':'[qkc]','s':'[sçcz]','z':'[zsç]','ç':'[çscz]','v':'[vw]','g':'[gj]','j':'[jg]' };
-        return q.split("").map(c => (mapa[c] || c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) + "+").join("h?");
+        const mapa = {
+            'a':'[aáàãâ]','e':'[iyeéê]','i':'[eiíy]','y':'[eyií]',
+            'o':'[oóôõ]', 'u':'[uúüw]','w':'[vwuúü]',
+            'c': '[cçcskq]', 'k':'[ckq]', 'q':'[qkc]',
+            's':'[sçcz]', 'z':'[zsç]', 'ç':'[çscz]', 'v':'[vw]', 'g':'[gj]', 'j':'[jg]' 
+        };
+        const pattern = q.split("").map(c => (mapa[c] || c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) + "+").join("h?");
+        return pattern;
     }
 
+    // Pesquisa Otimizada O(1)
     function performSearch() {
+        if (isProcessing) return;
         const query = document.getElementById("searchInput").value;
         const viewer = document.getElementById("viewer");
         const nav = document.getElementById("navButtons");
         const badge = document.getElementById("personBadge");
         const counter = document.getElementById("counterText");
 
-        if (!query.trim()) { renderHtml(docHtml); nav.style.display = "none"; badge.style.display = "none"; counter.innerText = "Pronto."; return; }
+        // Se a barra estiver vazia, apenas limpa as marcações e restaura o documento rapidamente
+        if (!query.trim()) {
+            renderHtml(docHtml);
+            matchesElements = []; currentIdx = -1;
+            nav.style.display = "none";
+            badge.style.display = "none";
+            counter.innerText = "Pronto.";
+            return;
+        }
 
-        const pattern = generateSmartRegexStr(query);
-        const fastRegex = new RegExp(`(h?${pattern})(?![^<]*>)`, "gi"); 
+        matchesElements = []; currentIdx = -1;
+        badge.style.display = "none";
+        nav.style.display = "none";
+
+        // Substituição Direta na String HTML - Corta os atrasos por completo
+        const patternStr = generateSmartRegexStr(query);
+        // Regra mágica que só aplica o regex fora das tags HTML
+        const fastRegex = new RegExp(`(h?${patternStr})(?![^<]*>)`, "gi"); 
+        
         renderHtml(docHtml.replace(fastRegex, '<span class="match">$1</span>'));
 
-        matchesElements = Array.from(viewer.querySelectorAll(".match"));
+        const allMatches = Array.from(viewer.querySelectorAll(".match"));
+        const exactQuery = query.trim().toLowerCase();
+        const exactMatches = [];
+        const phoneticMatches = [];
+        
+        allMatches.forEach(el => {
+            if (el.textContent.toLowerCase().includes(exactQuery)) exactMatches.push(el);
+            else phoneticMatches.push(el);
+        });
+
+        matchesElements = [...exactMatches, ...phoneticMatches];
+        
         if (matchesElements.length > 0) {
             nav.style.display = "flex";
-            counter.innerText = `${matchesElements.length} encontrados.`;
-            if (/^[A-ZÀ-Ú]/.test(query.trim())) { badge.style.display = "inline-block"; document.getElementById("pName").innerText = query; }
-            currentIdx = -1; navigate(1);
-        } else { counter.innerText = "Não encontrado."; nav.style.display = "none"; }
+            counter.innerText = `${matchesElements.length} itens encontrados.`;
+            if (/^[A-ZÀ-Ú]/.test(query.trim())) {
+                badge.style.display = "inline-block";
+                document.getElementById("pName").innerText = query;
+            }
+            navigate(1);
+        } else {
+            counter.innerText = "Não encontrado.";
+        }
     }
 
     function navigate(dir) {
         if (!matchesElements.length) return;
         if (currentIdx >= 0) matchesElements[currentIdx].classList.remove("active");
-        currentIdx = (currentIdx + dir + matchesElements.length) % matchesElements.length;
+        currentIdx += dir;
+        if (currentIdx >= matchesElements.length) currentIdx = 0;
+        if (currentIdx < 0) currentIdx = matchesElements.length - 1;
         const el = matchesElements[currentIdx];
         el.classList.add("active");
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         document.getElementById("counterText").innerText = `${currentIdx + 1} de ${matchesElements.length}`;
     }
 
-    // VOZ COM LÓGICA DE 5 SEGUNDOS
+    // Voz - Microfone Inteligente e Veloz
     const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (Speech) {
         const rec = new Speech();
         rec.lang = "pt-BR";
-        rec.continuous = false; // Garante que ele foque em uma frase por vez
         let voiceTimeout;
         const vBtn = document.getElementById("voiceBtn");
         
         vBtn.onclick = () => { 
             try { rec.start(); } catch(e) {}
             vBtn.classList.add("recording"); 
+            
             clearTimeout(voiceTimeout);
-            // Mantém ligado por 5 segundos independente de falar ou não
+            // Se ele não ouvir nada por 5 segundos, desliga
             voiceTimeout = setTimeout(() => {
                 try { rec.stop(); } catch(e) {}
                 vBtn.classList.remove("recording");
@@ -405,26 +573,50 @@
         };
         
         rec.onresult = e => {
-            const text = e.results[0][0].transcript.replace(/\.$/, "");
-            document.getElementById("searchInput").value = text;
+            document.getElementById("searchInput").value = e.results[0][0].transcript.replace(/\.$/, "");
             performSearch();
+            
+            // Força parada imediata logo após pegar o resultado, dando sensação de rapidez
+            try { rec.stop(); } catch(e) {}
+            vBtn.classList.remove("recording");
+            clearTimeout(voiceTimeout);
         };
-        rec.onend = () => { vBtn.classList.remove("recording"); };
+        
+        rec.onend = () => {
+            vBtn.classList.remove("recording");
+            clearTimeout(voiceTimeout);
+        };
     }
 
-    document.getElementById("searchInput").addEventListener('input', e => { if (!e.target.value) performSearch(); });
-    document.getElementById("searchInput").onkeypress = e => { if (e.key === "Enter") performSearch(); };
+    // Limpa a busca ao apagar o texto na barra
+    document.getElementById("searchInput").addEventListener('input', (e) => {
+        if (e.target.value === "") performSearch();
+    });
 
+    // Carregamento Inicial
     window.onload = async () => {
         await initDB();
-        const saved = await loadFromDB();
-        if (saved) { 
-            if (typeof saved === 'string') { docHtml = saved; renderHtml(saved); document.getElementById("viewer").style.display = "block"; document.getElementById("uploadArea").style.display = "none"; document.getElementById("searchContainer").style.display = "flex"; }
-            else processDoc(saved);
+        const savedData = await loadFromDB();
+        
+        if (savedData) {
+            if (typeof savedData === 'string') {
+                displayCachedHtml(savedData);
+            } else {
+                processDoc(savedData);
+            }
         } 
-        if (!sessionStorage.getItem("skipSupabaseFetch")) fetchLatestFromSupabase();
-        setInterval(fetchLatestFromSupabase, 10000);
+        
+        if (!sessionStorage.getItem("skipSupabaseFetch")) {
+            fetchLatestFromSupabase();
+        }
+
+        setInterval(() => {
+            fetchLatestFromSupabase();
+        }, 10000);
     };
+
+    document.getElementById("searchInput").onkeypress = e => { if (e.key === "Enter") performSearch(); };
 </script>
+
 </body>
 </html>
