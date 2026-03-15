@@ -203,7 +203,7 @@
             display: none;
         }
 
-        /* Painel de resultados mobile */
+        /* [NOVO] Painel de resultados mobile — mesmo visual do viewer */
         #mobileResults {
             display: none;
             background: #141414;
@@ -212,19 +212,10 @@
             border: 1px solid #262626;
         }
 
-        .mobile-result-item {
-            background: #1e1e1e;
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 10px 12px;
-            margin-bottom: 8px;
-            font-size: 13px;
-            color: #ccc;
-        }
-
-        .mobile-result-item.active-item {
-            border-color: #f59e0b;
-            box-shadow: 0 0 8px rgba(245,158,11,0.3);
+        /* [NOVO] Destaque da linha ativa no mobile */
+        #mobileResults table.active-item {
+            outline: 2px solid #f59e0b;
+            box-shadow: 0 0 10px rgba(245,158,11,0.4);
         }
 
         /* Estilo das tabelas Word e Tabela Customizada */
@@ -303,7 +294,7 @@
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
     let debounceTimer;
 
-    // Detecta se é mobile
+    // [NOVO] Detecta mobile
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 600;
 
     // Inicialização do Banco Local
@@ -353,6 +344,10 @@
             const v = document.getElementById("viewer");
             v.innerHTML = docHtml;
             v.style.display = "block";
+            // [NOVO] Garante que mobileResults suma ao carregar/sincronizar
+            const mr = document.getElementById("mobileResults");
+            mr.style.display = "none";
+            mr.innerHTML = "";
         } catch (err) {
             console.error(err);
             document.getElementById("uploadArea").style.display = "block";
@@ -369,6 +364,7 @@
         const v = document.getElementById("viewer");
         v.innerHTML = docHtml;
         v.style.display = "block";
+        // [NOVO] Garante que mobileResults suma ao carregar/sincronizar
         const mr = document.getElementById("mobileResults");
         mr.style.display = "none";
         mr.innerHTML = "";
@@ -389,7 +385,12 @@
             const latestFile = data[0];
             const localFileName = localStorage.getItem("lastFileName");
 
-            if (latestFile && (latestFile.name.endsWith('.docx') || latestFile.name.endsWith('.html')) && latestFile.name !== localFileName) {
+            // [CORREÇÃO F5] Na primeira chamada de cada sessão (F5), força o download
+            // mesmo que o localStorage já tenha o nome do arquivo.
+            const syncedThisSession = sessionStorage.getItem("syncedFile");
+            const needsDownload = latestFile.name !== localFileName || !syncedThisSession;
+
+            if (latestFile && (latestFile.name.endsWith('.docx') || latestFile.name.endsWith('.html')) && needsDownload) {
                 
                 const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
                 if (downloadError) throw downloadError;
@@ -404,6 +405,8 @@
                         saveToDB(text); 
                     }
                     localStorage.setItem("lastFileName", latestFile.name);
+                    // [CORREÇÃO F5] Marca que já sincronizou nessa sessão
+                    sessionStorage.setItem("syncedFile", latestFile.name);
                 }
             }
         } catch (err) {
@@ -411,6 +414,7 @@
         }
     }
 
+    // Faz o Upload da versão HTML atualizada para sincronizar as tabelas adicionadas
     async function uploadHtmlToSupabase(htmlContent) {
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         const fileName = `doc_${Date.now()}.html`;
@@ -422,6 +426,8 @@
             const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
             await _supabase.storage.from(BUCKET).upload(fileName, blob);
             localStorage.setItem("lastFileName", fileName);
+            // [CORREÇÃO F5] Atualiza também o sessionStorage ao fazer upload
+            sessionStorage.setItem("syncedFile", fileName);
             
             counter.innerText = "Sincronizado!";
             setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
@@ -431,11 +437,14 @@
         }
     }
 
+    // Função Otimizada para Salvar (Não trava o mobile)
     function debounceSave() {
         clearTimeout(debounceTimer);
+        // Espera 1.5 segundos após a pessoa parar de digitar para salvar (Acaba com os travamentos)
         debounceTimer = setTimeout(() => {
             const viewer = document.getElementById("viewer");
             
+            // Remove marcações amarelas de busca antes de salvar para não bugar o arquivo oficial
             const clone = viewer.cloneNode(true);
             const matches = clone.querySelectorAll('.match');
             matches.forEach(el => {
@@ -445,11 +454,12 @@
             });
             
             docHtml = clone.innerHTML;
-            saveToDB(docHtml);
-            uploadHtmlToSupabase(docHtml);
+            saveToDB(docHtml); // Salva local
+            uploadHtmlToSupabase(docHtml); // Envia a versão para a nuvem sincronizar todos os aparelhos
         }, 1500); 
     }
 
+    // Upload Local e para Supabase do Documento Original
     const fileInput = document.getElementById("fileInput");
     document.getElementById("uploadArea").onclick = () => fileInput.click();
 
@@ -473,6 +483,7 @@
         reader.readAsArrayBuffer(file);
     };
 
+    // Adicionar Nova Tabela (Linha com Nome e Informação)
     function addNewRow() {
         const viewer = document.getElementById("viewer");
         if (!viewer || viewer.style.display === "none") {
@@ -491,10 +502,14 @@
             </tr>
         `;
 
+        // Ativa a função inteligente que salva em background sem travar
         newTable.addEventListener("input", debounceSave);
 
         viewer.appendChild(newTable);
+        
+        // Dispara o salvamento para que a linha vazia recém-criada vá logo pra nuvem
         debounceSave();
+
         newTable.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
@@ -527,6 +542,7 @@
         matchesElements = []; currentIdx = -1;
         badge.style.display = "none";
         nav.style.display = "none";
+        // [NOVO] Limpa o painel mobile a cada nova busca
         mobileResults.style.display = "none";
         mobileResults.innerHTML = "";
 
@@ -560,10 +576,10 @@
 
         matchesElements = [...exactMatches, ...phoneticMatches];
         
-        // Reatribui a função de salvar
+        // Reatribui a função de salvar para não perder as edições caso o usuário edite tabelas que já existem
         const editables = viewer.querySelectorAll('td[contenteditable="true"]');
         editables.forEach(td => td.addEventListener("input", debounceSave));
-
+        
         if (matchesElements.length > 0) {
             nav.style.display = "flex";
             counter.innerText = `${matchesElements.length} itens encontrados.`;
@@ -572,21 +588,32 @@
                 document.getElementById("pName").innerText = query;
             }
 
-            // ── MOBILE: mantém o viewer intacto e exibe apenas os resultados encontrados ──
             if (isMobile) {
+                // [CORREÇÃO MOBILE] Oculta o documento inteiro e exibe só as linhas encontradas
+                viewer.style.display = "none";
                 mobileResults.style.display = "block";
 
                 matchesElements.forEach((el, idx) => {
-                    // Pega o contexto: linha da tabela ou parágrafo pai
-                    const row = el.closest("tr") || el.closest("p") || el.closest("li") || el.parentElement;
-                    const item = document.createElement("div");
-                    item.className = "mobile-result-item";
-                    item.dataset.idx = idx;
-                    item.innerHTML = row ? row.innerHTML : el.outerHTML;
-                    mobileResults.appendChild(item);
+                    // Sobe até o <tr> e reconstrói uma <table> completa — igual ao estilo original
+                    const tr = el.closest("tr");
+                    const table = document.createElement("table");
+                    table.dataset.idx = idx;
+                    if (tr) {
+                        const tbody = document.createElement("tbody");
+                        tbody.appendChild(tr.cloneNode(true));
+                        table.appendChild(tbody);
+                    } else {
+                        // Fallback para conteúdo fora de tabela
+                        const row = el.closest("p") || el.closest("li") || el.parentElement;
+                        const tr2 = document.createElement("tr");
+                        const td = document.createElement("td");
+                        td.innerHTML = row ? row.innerHTML : el.outerHTML;
+                        tr2.appendChild(td);
+                        table.appendChild(tr2);
+                    }
+                    mobileResults.appendChild(table);
                 });
 
-                // Troca navigate para trabalhar com os cards mobile
                 currentIdx = -1;
                 navigate(1);
             } else {
@@ -602,7 +629,7 @@
         const mobileResults = document.getElementById("mobileResults");
 
         if (isMobile && mobileResults.style.display === "block") {
-            // Remove destaque anterior no card
+            // [NOVO] Navegação nos cards mobile
             const prevCard = mobileResults.querySelector(".active-item");
             if (prevCard) prevCard.classList.remove("active-item");
 
@@ -675,6 +702,7 @@
             fetchLatestFromSupabase();
         }
 
+        // Mantém os outros aparelhos sincronizados (Verifica a cada 10 segundos discretamente)
         setInterval(() => {
             fetchLatestFromSupabase();
         }, 10000);
