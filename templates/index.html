@@ -199,7 +199,7 @@
             border-radius: 12px;
             padding: 15px;
             border: 1px solid #262626;
-            display: none;
+            display: none; /* Mantém oculto até pesquisar */
         }
 
         /* Estilo das tabelas Word e Tabela Customizada */
@@ -218,7 +218,11 @@
             box-shadow: 0 0 10px #f59e0b;
         }
 
-        /* REGRAS EXCLUSIVAS PARA MOBILE: ISOLAR TABELAS/LINHAS ENCONTRADAS */
+        /* TELA DE CARREGAMENTO MOBILE */
+        #mobileLoading {
+            display: none;
+        }
+
         @media (max-width: 600px) {
             .main-content { margin-top: 190px; }
             
@@ -227,28 +231,56 @@
                 display: none !important;
             }
 
-            /* Garante que o container com match fique visível */
             #viewer.search-active > .has-match {
                 display: block !important; 
                 width: 100%; 
                 margin: 10px 0;
             }
 
-            /* No caso de tabelas, aplica display de tabela */
             #viewer.search-active > table.has-match {
                 display: table !important;
             }
 
-            /* Dentro de tabelas com match, oculta linhas normais, revelando apenas o cabeçalho (first-child) e a linha encontrada */
             #viewer.search-active table.has-match tr:not(:first-child):not(.has-match) {
                 display: none !important;
             }
+
+            /* Overlay de Loading Exclusivo Mobile */
+            #mobileLoading.active {
+                display: flex;
+                position: fixed;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,0.92);
+                z-index: 9999;
+                align-items: center;
+                justify-content: center;
+                flex-direction: column;
+                gap: 15px;
+                color: #fff;
+                font-weight: bold;
+                letter-spacing: 2px;
+                text-align: center;
+                padding: 20px;
+            }
+            .spinner {
+                width: 40px; height: 40px;
+                border: 4px solid #333;
+                border-top: 4px solid #6366f1;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+            }
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         }
 
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
+
+<div id="mobileLoading">
+    <div class="spinner"></div>
+    <div>CARREGANDO AGUARDE</div>
+</div>
 
 <header class="fixed-header">
     <div class="header-container">
@@ -300,6 +332,15 @@
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
     let debounceTimer; 
 
+    function setMobileLoading(isLoading) {
+        const loader = document.getElementById("mobileLoading");
+        if (isLoading) {
+            loader.classList.add("active");
+        } else {
+            loader.classList.remove("active");
+        }
+    }
+
     // Inicialização do Banco Local
     function initDB() {
         return new Promise((res) => {
@@ -337,22 +378,23 @@
         document.getElementById("uploadArea").style.display = "none";
         document.getElementById("searchContainer").style.display = "flex";
         isProcessing = true;
+        setMobileLoading(true);
 
         try {
             const result = await mammoth.convertToHtml({ arrayBuffer: buf });
             docHtml = result.value;
-            
             saveToDB(docHtml); 
 
             const v = document.getElementById("viewer");
             v.innerHTML = docHtml;
-            v.style.display = "block";
+            v.style.display = "none"; // Oculta o documento até que uma pesquisa seja feita
         } catch (err) {
             console.error(err);
             document.getElementById("uploadArea").style.display = "block";
             document.getElementById("searchContainer").style.display = "none";
         } finally {
             isProcessing = false;
+            setMobileLoading(false);
         }
     }
 
@@ -360,24 +402,23 @@
         docHtml = htmlData;
         document.getElementById("uploadArea").style.display = "none";
         document.getElementById("searchContainer").style.display = "flex";
+        
         const v = document.getElementById("viewer");
         v.innerHTML = docHtml;
-        v.style.display = "block";
+        v.style.display = "none"; // Oculta o documento ao inicializar
     }
 
-    // Sincronização Inteligente e Atualização Forçada
+    // Sincronização Inteligente
     async function fetchLatestFromSupabase() {
         if (isProcessing) return;
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         try {
-            // Removido o 'limit: 1' para varrer e garantir qual é exatamente o mais novo
             const { data, error } = await _supabase.storage.from(BUCKET).list('', {
                 sortBy: { column: 'created_at', order: 'desc' }
             });
 
             if (error || !data || data.length === 0) return;
 
-            // Pega o arquivo mais recente que seja docx ou html
             const latestFile = data.find(f => f.name.endsWith('.docx') || f.name.endsWith('.html'));
             if (!latestFile) return;
 
@@ -385,7 +426,9 @@
 
             // Baixa se for diferente do que está no celular
             if (latestFile.name !== localFileName) {
-                isProcessing = true; // Impede múltiplas requisições encavaladas
+                isProcessing = true; 
+                setMobileLoading(true);
+
                 const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
                 if (downloadError) throw downloadError;
 
@@ -397,14 +440,20 @@
                         const text = await fileData.text();
                         displayCachedHtml(text);
                         saveToDB(text); 
-                        isProcessing = false;
                     }
                     localStorage.setItem("lastFileName", latestFile.name);
+
+                    // Refaz a pesquisa se o usuário já estiver procurando algo, para a tela não sumir de repente
+                    if (document.getElementById("searchInput").value.trim() !== "") {
+                        performSearch();
+                    }
                 }
             }
         } catch (err) {
             console.error("Erro ao buscar arquivo do Supabase:", err);
+        } finally {
             isProcessing = false;
+            setMobileLoading(false);
         }
     }
 
@@ -443,11 +492,9 @@
             const viewer = document.getElementById("viewer");
             const clone = viewer.cloneNode(true);
             
-            // Remove as classes de pesquisa antes de salvar
             clone.classList.remove("search-active");
             clone.querySelectorAll('.has-match').forEach(el => el.classList.remove('has-match'));
             
-            // Remove marcações amarelas
             const matches = clone.querySelectorAll('.match');
             matches.forEach(el => {
                 const parent = el.parentNode;
@@ -489,17 +536,21 @@
     // Adicionar Nova Tabela
     function addNewRow() {
         const viewer = document.getElementById("viewer");
-        if (!viewer || viewer.style.display === "none") {
+        if (!docHtml) {
             alert("Abra ou espere carregar uma lista primeiro.");
             return;
         }
 
+        viewer.style.display = "block"; // Força a exibição para ver a nova tabela
+        viewer.classList.add("search-active");
+
         const newTable = document.createElement("table");
         newTable.style.width = "100%";
         newTable.style.marginTop = "15px";
+        newTable.classList.add("has-match"); // Garante que a linha apareça no mobile
         
         newTable.innerHTML = `
-            <tr>
+            <tr class="has-match">
                 <td style="width: 80%; border: 1px solid #333; padding: 8px; color: #fff;" contenteditable="true">Inserir Nome...</td>
                 <td style="width: 20%; border: 1px solid #333; padding: 8px; color: #fff; text-align: center;" contenteditable="true">Info...</td>
             </tr>
@@ -533,7 +584,7 @@
         const badge = document.getElementById("personBadge");
         const counter = document.getElementById("counterText");
 
-        // Reseta o visualizador para o HTML salvo original
+        // Reseta o visualizador
         viewer.innerHTML = docHtml;
         viewer.classList.remove("search-active");
         
@@ -544,6 +595,7 @@
 
         if (!query.trim()) {
             counter.innerText = "Pronto.";
+            viewer.style.display = "none"; // Oculta se o campo estiver vazio
             return;
         }
 
@@ -577,14 +629,13 @@
 
         matchesElements = [...exactMatches, ...phoneticMatches];
         
-        // Reatribui eventos aos editáveis após recarregar docHtml
         const editables = viewer.querySelectorAll('td[contenteditable="true"]');
         editables.forEach(td => td.addEventListener("input", debounceSave));
         
         if (matchesElements.length > 0) {
+            viewer.style.display = "block"; // Mostra os resultados pois encontrou matches
             viewer.classList.add("search-active");
             
-            // Marca o caminho na árvore DOM para exibição exclusiva no modo mobile
             matchesElements.forEach(el => {
                 let tr = el.closest('tr');
                 let table = el.closest('table');
@@ -592,7 +643,6 @@
                 if (tr) tr.classList.add('has-match');
                 if (table) table.classList.add('has-match');
                 
-                // Encontra a tag mestre diretamente abaixo do #viewer
                 let current = el;
                 while (current && current.parentElement && current.parentElement.id !== 'viewer') {
                     current = current.parentElement;
@@ -611,6 +661,7 @@
             navigate(1);
         } else {
             counter.innerText = "Não encontrado.";
+            viewer.style.display = "none"; // Mantém oculto se não achar nada
         }
     }
 
