@@ -203,21 +203,6 @@
             display: none;
         }
 
-        /* [NOVO] Painel de resultados mobile — mesmo visual do viewer */
-        #mobileResults {
-            display: none;
-            background: #141414;
-            border-radius: 12px;
-            padding: 15px;
-            border: 1px solid #262626;
-        }
-
-        /* [NOVO] Destaque da linha ativa no mobile */
-        #mobileResults table.active-item {
-            outline: 2px solid #f59e0b;
-            box-shadow: 0 0 10px rgba(245,158,11,0.4);
-        }
-
         /* Estilo das tabelas Word e Tabela Customizada */
         table { border-collapse: collapse; width: 100%; margin: 15px 0; color: #ccc; }
         td, th { border: 1px solid #333; padding: 8px; font-size: 12px; }
@@ -283,7 +268,6 @@
     </div>
 
     <div id="viewer"></div>
-    <div id="mobileResults"></div>
 </main>
 
 <script>
@@ -292,10 +276,7 @@
     const BUCKET = "documentos";
 
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
-    let debounceTimer;
-
-    // [NOVO] Detecta mobile
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 600;
+    let debounceTimer; // Timer para evitar lentidão e salvar em lotes
 
     // Inicialização do Banco Local
     function initDB() {
@@ -344,10 +325,6 @@
             const v = document.getElementById("viewer");
             v.innerHTML = docHtml;
             v.style.display = "block";
-            // [NOVO] Garante que mobileResults suma ao carregar/sincronizar
-            const mr = document.getElementById("mobileResults");
-            mr.style.display = "none";
-            mr.innerHTML = "";
         } catch (err) {
             console.error(err);
             document.getElementById("uploadArea").style.display = "block";
@@ -364,10 +341,6 @@
         const v = document.getElementById("viewer");
         v.innerHTML = docHtml;
         v.style.display = "block";
-        // [NOVO] Garante que mobileResults suma ao carregar/sincronizar
-        const mr = document.getElementById("mobileResults");
-        mr.style.display = "none";
-        mr.innerHTML = "";
     }
 
     // Sincronização Inteligente (Detecta arquivo docx ou html)
@@ -385,12 +358,8 @@
             const latestFile = data[0];
             const localFileName = localStorage.getItem("lastFileName");
 
-            // Baixa se o arquivo do Supabase for diferente do localStorage (outro dispositivo subiu algo novo)
-            // OU se ainda não sincronizou nessa sessão (garante que o F5 sempre busca o mais recente)
-            const syncedThisSession = sessionStorage.getItem("syncedFile");
-            const needsDownload = latestFile.name !== localFileName || (latestFile.name === localFileName && !syncedThisSession);
-
-            if (latestFile && (latestFile.name.endsWith('.docx') || latestFile.name.endsWith('.html')) && needsDownload) {
+            // Baixa se for diferente do que está no celular
+            if (latestFile && (latestFile.name.endsWith('.docx') || latestFile.name.endsWith('.html')) && latestFile.name !== localFileName) {
                 
                 const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
                 if (downloadError) throw downloadError;
@@ -405,8 +374,6 @@
                         saveToDB(text); 
                     }
                     localStorage.setItem("lastFileName", latestFile.name);
-                    // [CORREÇÃO F5] Marca que já sincronizou nessa sessão
-                    sessionStorage.setItem("syncedFile", latestFile.name);
                 }
             }
         } catch (err) {
@@ -417,7 +384,7 @@
     // Faz o Upload da versão HTML atualizada para sincronizar as tabelas adicionadas
     async function uploadHtmlToSupabase(htmlContent) {
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        const fileName = `doc_${Date.now()}.html`;
+        const fileName = `doc_${Date.now()}.html`; // Salva a versão editada como HTML puro e limpo
         const counter = document.getElementById("counterText");
         
         counter.innerText = "Salvando na nuvem...";
@@ -425,9 +392,7 @@
         try {
             const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
             await _supabase.storage.from(BUCKET).upload(fileName, blob);
-            localStorage.setItem("lastFileName", fileName);
-            // [CORREÇÃO F5] Atualiza também o sessionStorage ao fazer upload
-            sessionStorage.setItem("syncedFile", fileName);
+            localStorage.setItem("lastFileName", fileName); // O aparelho que upou sabe que está na última versão
             
             counter.innerText = "Sincronizado!";
             setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
@@ -531,7 +496,6 @@
         if (isProcessing) return;
         const query = document.getElementById("searchInput").value;
         const viewer = document.getElementById("viewer");
-        const mobileResults = document.getElementById("mobileResults");
         const nav = document.getElementById("navButtons");
         const badge = document.getElementById("personBadge");
         const counter = document.getElementById("counterText");
@@ -542,9 +506,6 @@
         matchesElements = []; currentIdx = -1;
         badge.style.display = "none";
         nav.style.display = "none";
-        // [NOVO] Limpa o painel mobile a cada nova busca
-        mobileResults.style.display = "none";
-        mobileResults.innerHTML = "";
 
         const regex = generateSmartRegex(query);
         const walker = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
@@ -587,38 +548,7 @@
                 badge.style.display = "inline-block";
                 document.getElementById("pName").innerText = query;
             }
-
-            if (isMobile) {
-                // [CORREÇÃO MOBILE] Oculta o documento inteiro e exibe só as linhas encontradas
-                viewer.style.display = "none";
-                mobileResults.style.display = "block";
-
-                matchesElements.forEach((el, idx) => {
-                    // Sobe até o <tr> e reconstrói uma <table> completa — igual ao estilo original
-                    const tr = el.closest("tr");
-                    const table = document.createElement("table");
-                    table.dataset.idx = idx;
-                    if (tr) {
-                        const tbody = document.createElement("tbody");
-                        tbody.appendChild(tr.cloneNode(true));
-                        table.appendChild(tbody);
-                    } else {
-                        // Fallback para conteúdo fora de tabela
-                        const row = el.closest("p") || el.closest("li") || el.parentElement;
-                        const tr2 = document.createElement("tr");
-                        const td = document.createElement("td");
-                        td.innerHTML = row ? row.innerHTML : el.outerHTML;
-                        tr2.appendChild(td);
-                        table.appendChild(tr2);
-                    }
-                    mobileResults.appendChild(table);
-                });
-
-                currentIdx = -1;
-                navigate(1);
-            } else {
-                navigate(1);
-            }
+            navigate(1);
         } else {
             counter.innerText = "Não encontrado.";
         }
@@ -626,32 +556,13 @@
 
     function navigate(dir) {
         if (!matchesElements.length) return;
-        const mobileResults = document.getElementById("mobileResults");
-
-        if (isMobile && mobileResults.style.display === "block") {
-            // [NOVO] Navegação nos cards mobile
-            const prevCard = mobileResults.querySelector(".active-item");
-            if (prevCard) prevCard.classList.remove("active-item");
-
-            currentIdx += dir;
-            if (currentIdx >= matchesElements.length) currentIdx = 0;
-            if (currentIdx < 0) currentIdx = matchesElements.length - 1;
-
-            const card = mobileResults.querySelector(`[data-idx="${currentIdx}"]`);
-            if (card) {
-                card.classList.add("active-item");
-                card.scrollIntoView({ behavior: "smooth", block: "center" });
-            }
-        } else {
-            if (currentIdx >= 0) matchesElements[currentIdx].classList.remove("active");
-            currentIdx += dir;
-            if (currentIdx >= matchesElements.length) currentIdx = 0;
-            if (currentIdx < 0) currentIdx = matchesElements.length - 1;
-            const el = matchesElements[currentIdx];
-            el.classList.add("active");
-            el.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-
+        if (currentIdx >= 0) matchesElements[currentIdx].classList.remove("active");
+        currentIdx += dir;
+        if (currentIdx >= matchesElements.length) currentIdx = 0;
+        if (currentIdx < 0) currentIdx = matchesElements.length - 1;
+        const el = matchesElements[currentIdx];
+        el.classList.add("active");
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
         document.getElementById("counterText").innerText = `${currentIdx + 1} de ${matchesElements.length}`;
     }
 
