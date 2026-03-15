@@ -194,7 +194,6 @@
             cursor: pointer;
         }
 
-        /* Removido o content-visibility para acabar com o travamento no mobile */
         #viewer {
             background: #141414;
             border-radius: 12px;
@@ -276,7 +275,7 @@
     const BUCKET = "documentos";
 
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
-    let debounceTimer; // Timer para evitar lentidão e salvar em lotes
+    let debounceTimer; 
 
     // Inicialização do Banco Local
     function initDB() {
@@ -343,7 +342,7 @@
         v.style.display = "block";
     }
 
-    // Sincronização Inteligente (Detecta arquivo docx ou html)
+    // Sincronização Inteligente
     async function fetchLatestFromSupabase() {
         if (isProcessing) return;
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -358,7 +357,6 @@
             const latestFile = data[0];
             const localFileName = localStorage.getItem("lastFileName");
 
-            // Baixa se for diferente do que está no celular
             if (latestFile && (latestFile.name.endsWith('.docx') || latestFile.name.endsWith('.html')) && latestFile.name !== localFileName) {
                 
                 const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
@@ -381,10 +379,10 @@
         }
     }
 
-    // Faz o Upload da versão HTML atualizada para sincronizar as tabelas adicionadas
+    // Faz o Upload da versão HTML atualizada
     async function uploadHtmlToSupabase(htmlContent) {
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        const fileName = `doc_${Date.now()}.html`; // Salva a versão editada como HTML puro e limpo
+        const fileName = `doc_${Date.now()}.html`; 
         const counter = document.getElementById("counterText");
         
         counter.innerText = "Salvando na nuvem...";
@@ -392,7 +390,7 @@
         try {
             const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
             await _supabase.storage.from(BUCKET).upload(fileName, blob);
-            localStorage.setItem("lastFileName", fileName); // O aparelho que upou sabe que está na última versão
+            localStorage.setItem("lastFileName", fileName); 
             
             counter.innerText = "Sincronizado!";
             setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
@@ -402,14 +400,12 @@
         }
     }
 
-    // Função Otimizada para Salvar (Não trava o mobile)
+    // Função Otimizada para Salvar
     function debounceSave() {
         clearTimeout(debounceTimer);
-        // Espera 1.5 segundos após a pessoa parar de digitar para salvar (Acaba com os travamentos)
         debounceTimer = setTimeout(() => {
             const viewer = document.getElementById("viewer");
             
-            // Remove marcações amarelas de busca antes de salvar para não bugar o arquivo oficial
             const clone = viewer.cloneNode(true);
             const matches = clone.querySelectorAll('.match');
             matches.forEach(el => {
@@ -419,12 +415,12 @@
             });
             
             docHtml = clone.innerHTML;
-            saveToDB(docHtml); // Salva local
-            uploadHtmlToSupabase(docHtml); // Envia a versão para a nuvem sincronizar todos os aparelhos
+            saveToDB(docHtml); 
+            uploadHtmlToSupabase(docHtml); 
         }, 1500); 
     }
 
-    // Upload Local e para Supabase do Documento Original
+    // Upload Local
     const fileInput = document.getElementById("fileInput");
     document.getElementById("uploadArea").onclick = () => fileInput.click();
 
@@ -448,7 +444,7 @@
         reader.readAsArrayBuffer(file);
     };
 
-    // Adicionar Nova Tabela (Linha com Nome e Informação)
+    // Adicionar Nova Tabela
     function addNewRow() {
         const viewer = document.getElementById("viewer");
         if (!viewer || viewer.style.display === "none") {
@@ -467,14 +463,9 @@
             </tr>
         `;
 
-        // Ativa a função inteligente que salva em background sem travar
         newTable.addEventListener("input", debounceSave);
-
         viewer.appendChild(newTable);
-        
-        // Dispara o salvamento para que a linha vazia recém-criada vá logo pra nuvem
         debounceSave();
-
         newTable.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
@@ -492,7 +483,7 @@
         return new RegExp(`(h?${pattern})`, "gi");
     }
 
-    // A BUSCA OTIMIZADA PARA MOBILE COMEÇA AQUI
+    // A BUSCA NOVA E EXTREMAMENTE RÁPIDA (String Array Split)
     function performSearch() {
         if (isProcessing) return;
         const query = document.getElementById("searchInput").value;
@@ -502,50 +493,40 @@
         const counter = document.getElementById("counterText");
 
         if (!query.trim()) {
-            viewer.innerHTML = docHtml; // Reseta a tela
+            viewer.innerHTML = docHtml; 
             nav.style.display = "none";
             badge.style.display = "none";
             counter.innerText = "Pronto.";
-            // Garante que se o usuário limpar a busca e editar depois, vai salvar corretamente
             const editables = viewer.querySelectorAll('td[contenteditable="true"]');
             editables.forEach(td => td.addEventListener("input", debounceSave));
             return;
         }
 
         counter.innerText = "Buscando...";
-        isProcessing = true; // Impede que múltiplos cliques simultâneos criem filas de travamento
+        isProcessing = true; 
 
-        // setTimeout(..., 15) libera a interface para atualizar a mensagem "Buscando..." antes do trabalho pesado
+        // Aguarda 15ms para o celular poder mostrar o texto "Buscando..."
         setTimeout(() => {
             try {
-                // ESTRATÉGIA DE ALTA PERFORMANCE (DETACHED DOM):
-                // Criamos um contêiner invisível. Alterar elementos fora da tela é infinitamente mais rápido 
-                // para o processador do celular, pois não recalcula o visual do site (reflow/repaint).
-                const tempDiv = document.createElement("div");
-                tempDiv.innerHTML = docHtml;
+                const regex = generateSmartRegex(query);
+                
+                // O SEGREDO DA VELOCIDADE: Quebra o HTML inteiro em um array.
+                // Índices PARES são o texto visível. Índices ÍMPARES são as <tags> do HTML.
+                // Nós iteramos apenas no texto visível, evitando destruir o HTML.
+                const parts = docHtml.split(/(<[^>]*>)/);
+                
+                for (let i = 0; i < parts.length; i += 2) {
+                    if (parts[i]) { // Se existir texto aqui
+                        parts[i] = parts[i].replace(regex, '<span class="match">$1</span>');
+                    }
+                }
+                
+                // Cola o array inteiro devolta e renderiza UMA única vez.
+                viewer.innerHTML = parts.join('');
 
                 matchesElements = []; currentIdx = -1;
                 badge.style.display = "none";
                 nav.style.display = "none";
-
-                const regex = generateSmartRegex(query);
-                
-                // O TreeWalker varre a cópia invisível
-                const walker = document.createTreeWalker(tempDiv, NodeFilter.SHOW_TEXT, null, false);
-                const nodes = []; 
-                let n;
-                while (n = walker.nextNode()) nodes.push(n);
-
-                nodes.forEach(node => {
-                    if (regex.test(node.nodeValue)) {
-                        const span = document.createElement("span");
-                        span.innerHTML = node.nodeValue.replace(regex, '<span class="match">$1</span>');
-                        node.parentNode.replaceChild(span, node);
-                    }
-                });
-
-                // Agora jogamos o resultado processado de volta na tela em UMA única pancada
-                viewer.innerHTML = tempDiv.innerHTML;
 
                 const allMatches = Array.from(viewer.querySelectorAll(".match"));
                 const exactQuery = query.trim().toLowerCase();
@@ -563,7 +544,7 @@
 
                 matchesElements = [...exactMatches, ...phoneticMatches];
                 
-                // Reatribui a função de salvar nas tabelas geradas na tela nova
+                // Reatribui a função de salvar nas edições
                 const editables = viewer.querySelectorAll('td[contenteditable="true"]');
                 editables.forEach(td => td.addEventListener("input", debounceSave));
                 
@@ -579,7 +560,6 @@
                     counter.innerText = "Não encontrado.";
                 }
             } finally {
-                // Libera o sistema para nova busca independente se achou ou deu erro
                 isProcessing = false;
             }
         }, 15);
@@ -644,7 +624,6 @@
             fetchLatestFromSupabase();
         }
 
-        // Mantém os outros aparelhos sincronizados (Verifica a cada 10 segundos discretamente)
         setInterval(() => {
             fetchLatestFromSupabase();
         }, 10000);
