@@ -194,6 +194,7 @@
             cursor: pointer;
         }
 
+        /* Removido o content-visibility para acabar com o travamento no mobile */
         #viewer {
             background: #141414;
             border-radius: 12px;
@@ -275,7 +276,7 @@
     const BUCKET = "documentos";
 
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
-    let debounceTimer;
+    let debounceTimer; // Timer para evitar lentidão e salvar em lotes
 
     // Inicialização do Banco Local
     function initDB() {
@@ -309,14 +310,6 @@
         }
     }
 
-    // Função auxiliar centralizada para renderizar HTML rápido e garantir os eventos de edição salvos
-    function renderHtml(htmlContent) {
-        const viewer = document.getElementById("viewer");
-        viewer.innerHTML = htmlContent;
-        const editables = viewer.querySelectorAll('td[contenteditable="true"]');
-        editables.forEach(td => td.addEventListener("input", debounceSave));
-    }
-
     // Processamento Mammoth (Word Original)
     async function processDoc(buf) {
         document.getElementById("uploadArea").style.display = "none";
@@ -326,9 +319,12 @@
         try {
             const result = await mammoth.convertToHtml({ arrayBuffer: buf });
             docHtml = result.value;
+            
             saveToDB(docHtml); 
-            renderHtml(docHtml);
-            document.getElementById("viewer").style.display = "block";
+
+            const v = document.getElementById("viewer");
+            v.innerHTML = docHtml;
+            v.style.display = "block";
         } catch (err) {
             console.error(err);
             document.getElementById("uploadArea").style.display = "block";
@@ -342,8 +338,9 @@
         docHtml = htmlData;
         document.getElementById("uploadArea").style.display = "none";
         document.getElementById("searchContainer").style.display = "flex";
-        renderHtml(docHtml);
-        document.getElementById("viewer").style.display = "block";
+        const v = document.getElementById("viewer");
+        v.innerHTML = docHtml;
+        v.style.display = "block";
     }
 
     // Sincronização Inteligente (Detecta arquivo docx ou html)
@@ -361,7 +358,9 @@
             const latestFile = data[0];
             const localFileName = localStorage.getItem("lastFileName");
 
+            // Baixa se for diferente do que está no celular
             if (latestFile && (latestFile.name.endsWith('.docx') || latestFile.name.endsWith('.html')) && latestFile.name !== localFileName) {
+                
                 const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
                 if (downloadError) throw downloadError;
 
@@ -385,7 +384,7 @@
     // Faz o Upload da versão HTML atualizada para sincronizar as tabelas adicionadas
     async function uploadHtmlToSupabase(htmlContent) {
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        const fileName = `doc_${Date.now()}.html`;
+        const fileName = `doc_${Date.now()}.html`; // Salva a versão editada como HTML puro e limpo
         const counter = document.getElementById("counterText");
         
         counter.innerText = "Salvando na nuvem...";
@@ -393,7 +392,7 @@
         try {
             const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
             await _supabase.storage.from(BUCKET).upload(fileName, blob);
-            localStorage.setItem("lastFileName", fileName); 
+            localStorage.setItem("lastFileName", fileName); // O aparelho que upou sabe que está na última versão
             
             counter.innerText = "Sincronizado!";
             setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
@@ -403,13 +402,14 @@
         }
     }
 
-    // Função para Salvar
+    // Função Otimizada para Salvar (Não trava o mobile)
     function debounceSave() {
         clearTimeout(debounceTimer);
+        // Espera 1.5 segundos após a pessoa parar de digitar para salvar (Acaba com os travamentos)
         debounceTimer = setTimeout(() => {
             const viewer = document.getElementById("viewer");
             
-            // Remove marcações amarelas temporárias antes de salvar o oficial
+            // Remove marcações amarelas de busca antes de salvar para não bugar o arquivo oficial
             const clone = viewer.cloneNode(true);
             const matches = clone.querySelectorAll('.match');
             matches.forEach(el => {
@@ -419,8 +419,8 @@
             });
             
             docHtml = clone.innerHTML;
-            saveToDB(docHtml); 
-            uploadHtmlToSupabase(docHtml); 
+            saveToDB(docHtml); // Salva local
+            uploadHtmlToSupabase(docHtml); // Envia a versão para a nuvem sincronizar todos os aparelhos
         }, 1500); 
     }
 
@@ -442,11 +442,13 @@
         }
 
         const reader = new FileReader();
-        reader.onload = ev => { processDoc(ev.target.result); };
+        reader.onload = ev => {
+            processDoc(ev.target.result);
+        };
         reader.readAsArrayBuffer(file);
     };
 
-    // Adicionar Nova Tabela
+    // Adicionar Nova Tabela (Linha com Nome e Informação)
     function addNewRow() {
         const viewer = document.getElementById("viewer");
         if (!viewer || viewer.style.display === "none") {
@@ -465,14 +467,19 @@
             </tr>
         `;
 
-        newTable.querySelectorAll('td').forEach(td => td.addEventListener("input", debounceSave));
+        // Ativa a função inteligente que salva em background sem travar
+        newTable.addEventListener("input", debounceSave);
+
         viewer.appendChild(newTable);
+        
+        // Dispara o salvamento para que a linha vazia recém-criada vá logo pra nuvem
         debounceSave();
+
         newTable.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
-    // Regex Fonético (Agora retorna string para ser ultra veloz na substituição HTML)
-    function generateSmartRegexStr(query) {
+    // Regex Fonético
+    function generateSmartRegex(query) {
         let q = query.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\./g, "").toLowerCase().trim();
         q = q.replace(/(.)\1+/g, "$1").replace(/^h/, "");
         const mapa = {
@@ -482,10 +489,9 @@
             's':'[sçcz]', 'z':'[zsç]', 'ç':'[çscz]', 'v':'[vw]', 'g':'[gj]', 'j':'[jg]' 
         };
         const pattern = q.split("").map(c => (mapa[c] || c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) + "+").join("h?");
-        return pattern;
+        return new RegExp(`(h?${pattern})`, "gi");
     }
 
-    // Pesquisa Otimizada O(1)
     function performSearch() {
         if (isProcessing) return;
         const query = document.getElementById("searchInput").value;
@@ -494,38 +500,46 @@
         const badge = document.getElementById("personBadge");
         const counter = document.getElementById("counterText");
 
-        // Se a barra estiver vazia, apenas limpa as marcações e restaura o documento rapidamente
-        if (!query.trim()) {
-            renderHtml(docHtml);
-            matchesElements = []; currentIdx = -1;
-            nav.style.display = "none";
-            badge.style.display = "none";
-            counter.innerText = "Pronto.";
-            return;
-        }
+        if (!query.trim()) return;
 
+        viewer.innerHTML = docHtml;
         matchesElements = []; currentIdx = -1;
         badge.style.display = "none";
         nav.style.display = "none";
 
-        // Substituição Direta na String HTML - Corta os atrasos por completo
-        const patternStr = generateSmartRegexStr(query);
-        // Regra mágica que só aplica o regex fora das tags HTML
-        const fastRegex = new RegExp(`(h?${patternStr})(?![^<]*>)`, "gi"); 
-        
-        renderHtml(docHtml.replace(fastRegex, '<span class="match">$1</span>'));
+        const regex = generateSmartRegex(query);
+        const walker = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
+        const nodes = []; 
+        let n;
+        while (n = walker.nextNode()) nodes.push(n);
+
+        nodes.forEach(node => {
+            if (regex.test(node.nodeValue)) {
+                const span = document.createElement("span");
+                span.innerHTML = node.nodeValue.replace(regex, '<span class="match">$1</span>');
+                node.parentNode.replaceChild(span, node);
+            }
+        });
 
         const allMatches = Array.from(viewer.querySelectorAll(".match"));
         const exactQuery = query.trim().toLowerCase();
+        
         const exactMatches = [];
         const phoneticMatches = [];
         
         allMatches.forEach(el => {
-            if (el.textContent.toLowerCase().includes(exactQuery)) exactMatches.push(el);
-            else phoneticMatches.push(el);
+            if (el.textContent.toLowerCase().includes(exactQuery)) {
+                exactMatches.push(el);
+            } else {
+                phoneticMatches.push(el);
+            }
         });
 
         matchesElements = [...exactMatches, ...phoneticMatches];
+        
+        // Reatribui a função de salvar para não perder as edições caso o usuário edite tabelas que já existem
+        const editables = viewer.querySelectorAll('td[contenteditable="true"]');
+        editables.forEach(td => td.addEventListener("input", debounceSave));
         
         if (matchesElements.length > 0) {
             nav.style.display = "flex";
@@ -552,7 +566,7 @@
         document.getElementById("counterText").innerText = `${currentIdx + 1} de ${matchesElements.length}`;
     }
 
-    // Voz - Microfone Inteligente e Veloz
+    // Voz (Timer 5 Segundos)
     const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (Speech) {
         const rec = new Speech();
@@ -565,7 +579,6 @@
             vBtn.classList.add("recording"); 
             
             clearTimeout(voiceTimeout);
-            // Se ele não ouvir nada por 5 segundos, desliga
             voiceTimeout = setTimeout(() => {
                 try { rec.stop(); } catch(e) {}
                 vBtn.classList.remove("recording");
@@ -575,11 +588,6 @@
         rec.onresult = e => {
             document.getElementById("searchInput").value = e.results[0][0].transcript.replace(/\.$/, "");
             performSearch();
-            
-            // Força parada imediata logo após pegar o resultado, dando sensação de rapidez
-            try { rec.stop(); } catch(e) {}
-            vBtn.classList.remove("recording");
-            clearTimeout(voiceTimeout);
         };
         
         rec.onend = () => {
@@ -587,11 +595,6 @@
             clearTimeout(voiceTimeout);
         };
     }
-
-    // Limpa a busca ao apagar o texto na barra
-    document.getElementById("searchInput").addEventListener('input', (e) => {
-        if (e.target.value === "") performSearch();
-    });
 
     // Carregamento Inicial
     window.onload = async () => {
@@ -610,6 +613,7 @@
             fetchLatestFromSupabase();
         }
 
+        // Mantém os outros aparelhos sincronizados (Verifica a cada 10 segundos discretamente)
         setInterval(() => {
             fetchLatestFromSupabase();
         }, 10000);
