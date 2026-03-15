@@ -9,7 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.21/mammoth.browser.min.js"></script>
     
     <style>
-        /* ── RESET TOTAL ── */
+        /* ── RESET E PERFORMANCE CSS ── */
         * { 
             margin: 0;
             padding: 0;
@@ -25,7 +25,7 @@
             overflow-x: hidden;
         }
 
-        /* ── CABEÇALHO COLADO NO TOPO ── */
+        /* ── CABEÇALHO FIXO ── */
         .fixed-header {
             position: fixed;
             top: 0;
@@ -37,7 +37,6 @@
             border-bottom: 1px solid #262626;
             z-index: 1000;
             padding: 8px 0;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.8);
         }
 
         .header-container {
@@ -51,7 +50,6 @@
             text-align: center;
             font-size: 2.0rem;
             font-weight: 800;
-            letter-spacing: 1px;
             margin-bottom: 6px;
             color: #fff;
             text-transform: uppercase;
@@ -60,7 +58,6 @@
             -webkit-text-fill-color: transparent;
         }
 
-        /* Botão + Adicionar Linha */
         .btn-add {
             position: absolute;
             top: 0;
@@ -77,18 +74,13 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: transform 0.1s;
         }
-        .btn-add:active { transform: scale(0.96); }
 
-        /* Controles de Busca */
         .search-controls {
             display: none;
             flex-direction: column;
             gap: 6px;
         }
-
-        .input-full-row { width: 100%; }
 
         input[type="text"] {
             width: 100%;
@@ -98,12 +90,6 @@
             border-radius: 8px;
             color: #fff;
             font-size: 16px;
-            transition: all 0.3s ease;
-        }
-
-        input[type="text"]:focus {
-            outline: none;
-            border-color: #6366f1;
         }
 
         .button-actions-row {
@@ -120,7 +106,6 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 13px;
             height: 40px;
             transition: transform 0.1s;
         }
@@ -133,13 +118,11 @@
         .btn-main { background: #6366f1; color: white; flex: 1; text-transform: uppercase; }
         .btn-clear { background: #2a0a0a; color: #fca5a5; width: 50px; font-size: 16px; }
 
-        /* Status e Navegação */
         .status-row {
             position: relative;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-top: 2px;
             min-height: 55px; 
         }
 
@@ -151,7 +134,6 @@
             transform: translateX(-50%);
             display: flex; 
             gap: 4px; 
-            z-index: 10;
         }
         
         .btn-nav {
@@ -160,7 +142,6 @@
             padding: 0 40px;
             height: 55px;
             border-radius: 5px;
-            font-size: 10px;
             border: 1px solid #333;
         }
 
@@ -171,18 +152,14 @@
             border-radius: 4px;
             font-size: 10px;
             font-weight: 700;
-            border: 1px solid rgba(16, 185, 129, 0.2);
             display: none;
         }
 
-        #systemLog { display: none !important; }
-
-        /* ── CONTEÚDO PRINCIPAL ── */
+        /* ── CONTEÚDO ── */
         .main-content {
             width: 95%;
             max-width: 900px;
             margin: 180px auto 20px auto;
-            padding-bottom: 30px;
         }
 
         .upload-card {
@@ -191,10 +168,8 @@
             border-radius: 15px;
             padding: 40px 20px;
             text-align: center;
-            cursor: pointer;
         }
 
-        /* Removido o content-visibility para acabar com o travamento no mobile */
         #viewer {
             background: #141414;
             border-radius: 12px;
@@ -203,27 +178,14 @@
             display: none;
         }
 
-        /* Estilo das tabelas Word e Tabela Customizada */
         table { border-collapse: collapse; width: 100%; margin: 15px 0; color: #ccc; }
         td, th { border: 1px solid #333; padding: 8px; font-size: 12px; }
         
-        .match { 
-            background: #fef08a; 
-            color: #000; 
-            font-weight: bold; 
-            scroll-margin-top: 150px; 
-        }
-        .match.active { 
-            background: #f59e0b; 
-            color: #fff; 
-            box-shadow: 0 0 10px #f59e0b;
-        }
-
-        @media (max-width: 600px) {
-            .main-content { margin-top: 190px; }
-        }
+        .match { background: #fef08a; color: #000; font-weight: bold; scroll-margin-top: 150px; }
+        .match.active { background: #f59e0b; color: #fff; box-shadow: 0 0 10px #f59e0b; }
 
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        @media (max-width: 600px) { .main-content { margin-top: 190px; } }
     </style>
 </head>
 <body>
@@ -246,16 +208,12 @@
             
             <div class="status-row">
                 <div id="counterText" class="counter-badge">Pronto.</div>
-                
                 <div id="navButtons" class="nav-cluster" style="display: none;">
                     <button class="btn-nav" onclick="navigate(-1)">◀</button>
                     <button class="btn-nav" onclick="navigate(1)">▶</button>
                 </div>
-
                 <div id="personBadge" class="person-tag">Aluno: <span id="pName"></span></div>
             </div>
-            
-            <div id="systemLog"></div>
         </div>
     </div>
 </header>
@@ -263,10 +221,8 @@
 <main class="main-content">
     <div id="uploadArea" class="upload-card">
         <h3>📄 Abrir Lista (.docx)</h3>
-        <p>Clique para selecionar o arquivo</p>
         <input type="file" id="fileInput" accept=".docx" style="display:none"/>
     </div>
-
     <div id="viewer"></div>
 </main>
 
@@ -276,9 +232,9 @@
     const BUCKET = "documentos";
 
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
-    let debounceTimer; // Timer para evitar lentidão e salvar em lotes
+    let debounceTimer;
 
-    // Inicialização do Banco Local
+    // Banco Local
     function initDB() {
         return new Promise((res) => {
             const req = indexedDB.open("WordSearchDB", 1);
@@ -287,9 +243,7 @@
         });
     }
 
-    function saveToDB(data) {
-        db.transaction(["documents"], "readwrite").objectStore("documents").put(data, "currentFile");
-    }
+    function saveToDB(data) { db.transaction(["documents"], "readwrite").objectStore("documents").put(data, "currentFile"); }
 
     function loadFromDB() {
         return new Promise((res) => {
@@ -299,286 +253,151 @@
     }
 
     function clearFile() {
-        const senha = prompt("Digite a senha para trocar o arquivo:");
-        if (senha === "0009") {
+        if (prompt("Senha:") === "0009") {
             db.transaction(["documents"], "readwrite").objectStore("documents").delete("currentFile");
             localStorage.removeItem("lastFileName");
             sessionStorage.setItem("skipSupabaseFetch", "true"); 
             location.reload();
-        } else if (senha !== null) {
-            alert("Senha incorreta!");
         }
     }
 
-    // Processamento Mammoth (Word Original)
+    function renderHtml(htmlContent) {
+        const viewer = document.getElementById("viewer");
+        viewer.innerHTML = htmlContent;
+        viewer.querySelectorAll('td[contenteditable="true"]').forEach(td => td.addEventListener("input", debounceSave));
+    }
+
     async function processDoc(buf) {
         document.getElementById("uploadArea").style.display = "none";
         document.getElementById("searchContainer").style.display = "flex";
         isProcessing = true;
-
         try {
             const result = await mammoth.convertToHtml({ arrayBuffer: buf });
             docHtml = result.value;
-            
             saveToDB(docHtml); 
-
-            const v = document.getElementById("viewer");
-            v.innerHTML = docHtml;
-            v.style.display = "block";
-        } catch (err) {
-            console.error(err);
-            document.getElementById("uploadArea").style.display = "block";
-            document.getElementById("searchContainer").style.display = "none";
-        } finally {
-            isProcessing = false;
-        }
+            renderHtml(docHtml);
+            document.getElementById("viewer").style.display = "block";
+        } finally { isProcessing = false; }
     }
 
-    function displayCachedHtml(htmlData) {
-        docHtml = htmlData;
-        document.getElementById("uploadArea").style.display = "none";
-        document.getElementById("searchContainer").style.display = "flex";
-        const v = document.getElementById("viewer");
-        v.innerHTML = docHtml;
-        v.style.display = "block";
-    }
-
-    // Sincronização Inteligente (Detecta arquivo docx ou html)
     async function fetchLatestFromSupabase() {
         if (isProcessing) return;
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         try {
-            const { data, error } = await _supabase.storage.from(BUCKET).list('', {
-                limit: 1, 
-                sortBy: { column: 'created_at', order: 'desc' }
-            });
-
-            if (error || !data || data.length === 0) return;
-
-            const latestFile = data[0];
-            const localFileName = localStorage.getItem("lastFileName");
-
-            // Baixa se for diferente do que está no celular
-            if (latestFile && (latestFile.name.endsWith('.docx') || latestFile.name.endsWith('.html')) && latestFile.name !== localFileName) {
-                
-                const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
-                if (downloadError) throw downloadError;
-
+            const { data } = await _supabase.storage.from(BUCKET).list('', { limit: 1, sortBy: { column: 'created_at', order: 'desc' } });
+            if (data && data[0] && data[0].name !== localStorage.getItem("lastFileName")) {
+                const { data: fileData } = await _supabase.storage.from(BUCKET).download(data[0].name);
                 if (fileData) {
-                    if (latestFile.name.endsWith('.docx')) {
-                        const arrayBuffer = await fileData.arrayBuffer();
-                        await processDoc(arrayBuffer);
-                    } else if (latestFile.name.endsWith('.html')) {
-                        const text = await fileData.text();
-                        displayCachedHtml(text);
-                        saveToDB(text); 
-                    }
-                    localStorage.setItem("lastFileName", latestFile.name);
+                    const text = data[0].name.endsWith('.html') ? await fileData.text() : null;
+                    if (text) { docHtml = text; renderHtml(text); saveToDB(text); }
+                    localStorage.setItem("lastFileName", data[0].name);
                 }
             }
-        } catch (err) {
-            console.error("Erro ao buscar arquivo do Supabase:", err);
-        }
+        } catch (e) {}
     }
 
-    // Faz o Upload da versão HTML atualizada para sincronizar as tabelas adicionadas
     async function uploadHtmlToSupabase(htmlContent) {
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        const fileName = `doc_${Date.now()}.html`; // Salva a versão editada como HTML puro e limpo
-        const counter = document.getElementById("counterText");
-        
-        counter.innerText = "Salvando na nuvem...";
-
+        const fileName = `doc_${Date.now()}.html`;
         try {
             const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
             await _supabase.storage.from(BUCKET).upload(fileName, blob);
-            localStorage.setItem("lastFileName", fileName); // O aparelho que upou sabe que está na última versão
-            
-            counter.innerText = "Sincronizado!";
-            setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
-        } catch(ex) {
-            console.error("Erro no upload de atualização:", ex);
-            counter.innerText = "Erro ao salvar na nuvem.";
-        }
+            localStorage.setItem("lastFileName", fileName);
+        } catch(e) {}
     }
 
-    // Função Otimizada para Salvar (Não trava o mobile)
     function debounceSave() {
         clearTimeout(debounceTimer);
-        // Espera 1.5 segundos após a pessoa parar de digitar para salvar (Acaba com os travamentos)
         debounceTimer = setTimeout(() => {
-            const viewer = document.getElementById("viewer");
-            
-            // Remove marcações amarelas de busca antes de salvar para não bugar o arquivo oficial
-            const clone = viewer.cloneNode(true);
-            const matches = clone.querySelectorAll('.match');
-            matches.forEach(el => {
-                const parent = el.parentNode;
-                while(el.firstChild) parent.insertBefore(el.firstChild, el);
-                parent.removeChild(el);
+            const clone = document.getElementById("viewer").cloneNode(true);
+            clone.querySelectorAll('.match').forEach(el => {
+                const p = el.parentNode;
+                while(el.firstChild) p.insertBefore(el.firstChild, el);
+                p.removeChild(el);
             });
-            
             docHtml = clone.innerHTML;
-            saveToDB(docHtml); // Salva local
-            uploadHtmlToSupabase(docHtml); // Envia a versão para a nuvem sincronizar todos os aparelhos
+            saveToDB(docHtml); 
+            uploadHtmlToSupabase(docHtml); 
         }, 1500); 
     }
 
-    // Upload Local e para Supabase do Documento Original
-    const fileInput = document.getElementById("fileInput");
-    document.getElementById("uploadArea").onclick = () => fileInput.click();
-
-    fileInput.onchange = async (e) => {
+    document.getElementById("uploadArea").onclick = () => document.getElementById("fileInput").click();
+    document.getElementById("fileInput").onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        const fileName = `doc_${Date.now()}.docx`;
-        try {
-            await _supabase.storage.from(BUCKET).upload(fileName, file);
-            localStorage.setItem("lastFileName", fileName);
-        } catch(ex) {
-            console.error("Erro no upload:", ex);
-        }
-
+        const name = `doc_${Date.now()}.docx`;
+        await _supabase.storage.from(BUCKET).upload(name, file);
+        localStorage.setItem("lastFileName", name);
         const reader = new FileReader();
-        reader.onload = ev => {
-            processDoc(ev.target.result);
-        };
+        reader.onload = ev => processDoc(ev.target.result);
         reader.readAsArrayBuffer(file);
     };
 
-    // Adicionar Nova Tabela (Linha com Nome e Informação)
     function addNewRow() {
-        const viewer = document.getElementById("viewer");
-        if (!viewer || viewer.style.display === "none") {
-            alert("Abra ou espere carregar uma lista primeiro.");
-            return;
-        }
-
-        const newTable = document.createElement("table");
-        newTable.style.width = "100%";
-        newTable.style.marginTop = "15px";
-        
-        newTable.innerHTML = `
-            <tr>
-                <td style="width: 80%; border: 1px solid #333; padding: 8px; color: #fff;" contenteditable="true">Inserir Nome...</td>
-                <td style="width: 20%; border: 1px solid #333; padding: 8px; color: #fff; text-align: center;" contenteditable="true">Info...</td>
-            </tr>
-        `;
-
-        // Ativa a função inteligente que salva em background sem travar
-        newTable.addEventListener("input", debounceSave);
-
-        viewer.appendChild(newTable);
-        
-        // Dispara o salvamento para que a linha vazia recém-criada vá logo pra nuvem
+        const v = document.getElementById("viewer");
+        if (!v.innerHTML) return;
+        const nt = document.createElement("table");
+        nt.innerHTML = `<tr><td style="width:80%;color:#fff;" contenteditable="true">Novo Nome...</td><td style="width:20%;color:#fff;text-align:center;" contenteditable="true">Info</td></tr>`;
+        nt.querySelectorAll('td').forEach(td => td.addEventListener("input", debounceSave));
+        v.appendChild(nt);
         debounceSave();
-
-        newTable.scrollIntoView({ behavior: "smooth", block: "center" });
+        nt.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
-    // Regex Fonético
-    function generateSmartRegex(query) {
+    function generateSmartRegexStr(query) {
         let q = query.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\./g, "").toLowerCase().trim();
         q = q.replace(/(.)\1+/g, "$1").replace(/^h/, "");
-        const mapa = {
-            'a':'[aáàãâ]','e':'[iyeéê]','i':'[eiíy]','y':'[eyií]',
-            'o':'[oóôõ]', 'u':'[uúüw]','w':'[vwuúü]',
-            'c': '[cçcskq]', 'k':'[ckq]', 'q':'[qkc]',
-            's':'[sçcz]', 'z':'[zsç]', 'ç':'[çscz]', 'v':'[vw]', 'g':'[gj]', 'j':'[jg]' 
-        };
-        const pattern = q.split("").map(c => (mapa[c] || c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) + "+").join("h?");
-        return new RegExp(`(h?${pattern})`, "gi");
+        const mapa = { 'a':'[aáàãâ]','e':'[iyeéê]','i':'[eiíy]','y':'[eyií]','o':'[oóôõ]','u':'[uúüw]','w':'[vwuúü]','c':'[cçcskq]','k':'[ckq]','q':'[qkc]','s':'[sçcz]','z':'[zsç]','ç':'[çscz]','v':'[vw]','g':'[gj]','j':'[jg]' };
+        return q.split("").map(c => (mapa[c] || c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) + "+").join("h?");
     }
 
     function performSearch() {
-        if (isProcessing) return;
         const query = document.getElementById("searchInput").value;
         const viewer = document.getElementById("viewer");
         const nav = document.getElementById("navButtons");
         const badge = document.getElementById("personBadge");
         const counter = document.getElementById("counterText");
 
-        if (!query.trim()) return;
+        if (!query.trim()) { renderHtml(docHtml); nav.style.display = "none"; badge.style.display = "none"; counter.innerText = "Pronto."; return; }
 
-        viewer.innerHTML = docHtml;
-        matchesElements = []; currentIdx = -1;
-        badge.style.display = "none";
-        nav.style.display = "none";
+        const pattern = generateSmartRegexStr(query);
+        const fastRegex = new RegExp(`(h?${pattern})(?![^<]*>)`, "gi"); 
+        renderHtml(docHtml.replace(fastRegex, '<span class="match">$1</span>'));
 
-        const regex = generateSmartRegex(query);
-        const walker = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, null, false);
-        const nodes = []; 
-        let n;
-        while (n = walker.nextNode()) nodes.push(n);
-
-        nodes.forEach(node => {
-            if (regex.test(node.nodeValue)) {
-                const span = document.createElement("span");
-                span.innerHTML = node.nodeValue.replace(regex, '<span class="match">$1</span>');
-                node.parentNode.replaceChild(span, node);
-            }
-        });
-
-        const allMatches = Array.from(viewer.querySelectorAll(".match"));
-        const exactQuery = query.trim().toLowerCase();
-        
-        const exactMatches = [];
-        const phoneticMatches = [];
-        
-        allMatches.forEach(el => {
-            if (el.textContent.toLowerCase().includes(exactQuery)) {
-                exactMatches.push(el);
-            } else {
-                phoneticMatches.push(el);
-            }
-        });
-
-        matchesElements = [...exactMatches, ...phoneticMatches];
-        
-        // Reatribui a função de salvar para não perder as edições caso o usuário edite tabelas que já existem
-        const editables = viewer.querySelectorAll('td[contenteditable="true"]');
-        editables.forEach(td => td.addEventListener("input", debounceSave));
-        
+        matchesElements = Array.from(viewer.querySelectorAll(".match"));
         if (matchesElements.length > 0) {
             nav.style.display = "flex";
-            counter.innerText = `${matchesElements.length} itens encontrados.`;
-            if (/^[A-ZÀ-Ú]/.test(query.trim())) {
-                badge.style.display = "inline-block";
-                document.getElementById("pName").innerText = query;
-            }
-            navigate(1);
-        } else {
-            counter.innerText = "Não encontrado.";
-        }
+            counter.innerText = `${matchesElements.length} encontrados.`;
+            if (/^[A-ZÀ-Ú]/.test(query.trim())) { badge.style.display = "inline-block"; document.getElementById("pName").innerText = query; }
+            currentIdx = -1; navigate(1);
+        } else { counter.innerText = "Não encontrado."; nav.style.display = "none"; }
     }
 
     function navigate(dir) {
         if (!matchesElements.length) return;
         if (currentIdx >= 0) matchesElements[currentIdx].classList.remove("active");
-        currentIdx += dir;
-        if (currentIdx >= matchesElements.length) currentIdx = 0;
-        if (currentIdx < 0) currentIdx = matchesElements.length - 1;
+        currentIdx = (currentIdx + dir + matchesElements.length) % matchesElements.length;
         const el = matchesElements[currentIdx];
         el.classList.add("active");
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         document.getElementById("counterText").innerText = `${currentIdx + 1} de ${matchesElements.length}`;
     }
 
-    // Voz (Timer 5 Segundos)
+    // VOZ COM LÓGICA DE 5 SEGUNDOS
     const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (Speech) {
         const rec = new Speech();
         rec.lang = "pt-BR";
+        rec.continuous = false; // Garante que ele foque em uma frase por vez
         let voiceTimeout;
         const vBtn = document.getElementById("voiceBtn");
         
         vBtn.onclick = () => { 
             try { rec.start(); } catch(e) {}
             vBtn.classList.add("recording"); 
-            
             clearTimeout(voiceTimeout);
+            // Mantém ligado por 5 segundos independente de falar ou não
             voiceTimeout = setTimeout(() => {
                 try { rec.stop(); } catch(e) {}
                 vBtn.classList.remove("recording");
@@ -586,41 +405,26 @@
         };
         
         rec.onresult = e => {
-            document.getElementById("searchInput").value = e.results[0][0].transcript.replace(/\.$/, "");
+            const text = e.results[0][0].transcript.replace(/\.$/, "");
+            document.getElementById("searchInput").value = text;
             performSearch();
         };
-        
-        rec.onend = () => {
-            vBtn.classList.remove("recording");
-            clearTimeout(voiceTimeout);
-        };
+        rec.onend = () => { vBtn.classList.remove("recording"); };
     }
 
-    // Carregamento Inicial
+    document.getElementById("searchInput").addEventListener('input', e => { if (!e.target.value) performSearch(); });
+    document.getElementById("searchInput").onkeypress = e => { if (e.key === "Enter") performSearch(); };
+
     window.onload = async () => {
         await initDB();
-        const savedData = await loadFromDB();
-        
-        if (savedData) {
-            if (typeof savedData === 'string') {
-                displayCachedHtml(savedData);
-            } else {
-                processDoc(savedData);
-            }
+        const saved = await loadFromDB();
+        if (saved) { 
+            if (typeof saved === 'string') { docHtml = saved; renderHtml(saved); document.getElementById("viewer").style.display = "block"; document.getElementById("uploadArea").style.display = "none"; document.getElementById("searchContainer").style.display = "flex"; }
+            else processDoc(saved);
         } 
-        
-        if (!sessionStorage.getItem("skipSupabaseFetch")) {
-            fetchLatestFromSupabase();
-        }
-
-        // Mantém os outros aparelhos sincronizados (Verifica a cada 10 segundos discretamente)
-        setInterval(() => {
-            fetchLatestFromSupabase();
-        }, 10000);
+        if (!sessionStorage.getItem("skipSupabaseFetch")) fetchLatestFromSupabase();
+        setInterval(fetchLatestFromSupabase, 10000);
     };
-
-    document.getElementById("searchInput").onkeypress = e => { if (e.key === "Enter") performSearch(); };
 </script>
-
 </body>
 </html>
