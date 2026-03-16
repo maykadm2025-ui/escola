@@ -489,8 +489,11 @@
 </main>
 
 <script>
-    const SUPABASE_URL = "https://epbfgvhjrcfjewwmptjj.supabase.co";
-    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwYmZndmhqcmNmamV3d21wdGpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNzk4NjgsImV4cCI6MjA4ODc1NTg2OH0.50JJJgmtSAFCA6ivFyzFW1EiPx2hsxoF5Rl4BvOaiwQ";
+    // Credenciais injetadas pelo Flask
+    const SUPABASE_URL = "{{ supabase_url }}";
+    const SUPABASE_KEY = "{{ supabase_key }}";
+    const PASSWORD = "{{ password }}";  // senha usada na função clearFile
+
     const BUCKET = "documentos";
 
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
@@ -527,7 +530,7 @@
 
     function clearFile() {
         const senha = prompt("Digite a senha para trocar o arquivo:");
-        if (senha === "0009") {
+        if (senha === PASSWORD) {   // agora usa a variável vinda do Flask
             db.transaction(["documents"], "readwrite").objectStore("documents").delete("currentFile");
             localStorage.removeItem("lastFileName");
             sessionStorage.setItem("skipSupabaseFetch", "true"); 
