@@ -200,7 +200,7 @@
             padding: 15px;
             border: 1px solid #262626;
             display: none; 
-            cursor: pointer; /* Indica que é clicável */
+            cursor: pointer;
         }
 
         /* Estilo das tabelas Word e Tabela Customizada */
@@ -218,6 +218,30 @@
             color: #fff; 
             box-shadow: 0 0 10px #f59e0b;
         }
+
+        /* ── AÇÕES DE LINHA CUSTOMIZADA (DESKTOP/MOBILE) ── */
+        .desktop-actions {
+            display: table-cell;
+            width: 150px;
+            text-align: center;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+        .action-btn {
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 10px;
+            margin: 2px;
+            font-weight: 800;
+            display: inline-block;
+        }
+        .btn-edit { background: #eab308; color: #000; border-color: #ca8a04; }
+        .btn-delete { background: #ef4444; color: #fff; border-color: #b91c1c; }
+        .btn-save-row { background: #10b981; color: #fff; border-color: #059669; }
 
         /* ── MODAL DE STATUS ── */
         .modal-overlay {
@@ -261,7 +285,6 @@
             border: 1px solid #262626;
         }
         
-        /* Área de Histórico no Modal */
         .history-list {
             background: #0a0a0a;
             border: 1px solid #262626;
@@ -319,7 +342,6 @@
         .btn-remove-modal { background: #ef4444; color: #fff; }
         .btn-save-modal { background: #10b981; color: #fff; }
 
-        /* Badge que aparece na lista principal */
         .status-badge {
             color: #10b981;
             font-weight: 800;
@@ -329,12 +351,11 @@
             padding: 4px 8px;
             border-radius: 6px;
             border: 1px solid rgba(16, 185, 129, 0.3);
-            display: inline-block; /* Garante que fique na mesma linha (ao lado) */
+            display: inline-block; 
             vertical-align: middle;
             white-space: nowrap;
         }
 
-        /* TELA DE CARREGAMENTO MOBILE */
         #mobileLoading {
             display: none;
         }
@@ -359,8 +380,12 @@
             #viewer.search-active table.has-match tr:not(:first-child):not(.has-match) {
                 display: none !important;
             }
+            
+            /* Oculta completamente botões de edição/exclusão no Mobile */
+            .desktop-actions {
+                display: none !important;
+            }
 
-            /* Overlay de Loading Exclusivo Mobile */
             #mobileLoading.active {
                 display: flex;
                 position: fixed;
@@ -397,8 +422,7 @@
         <div class="modal-title">Status do Documento</div>
         <div id="modalStudentName" class="modal-name"></div>
         
-        <div id="statusHistoryList" class="history-list">
-            </div>
+        <div id="statusHistoryList" class="history-list"></div>
 
         <label class="modal-option">
             <input type="checkbox" id="chkHistorico">
@@ -471,8 +495,6 @@
 
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
     let debounceTimer; 
-
-    // Variável para guardar o elemento clicado para o modal
     let activeElementForStatus = null;
 
     function setMobileLoading(isLoading) {
@@ -484,7 +506,6 @@
         }
     }
 
-    // Inicialização do Banco Local
     function initDB() {
         return new Promise((res) => {
             const req = indexedDB.open("WordSearchDB", 1);
@@ -516,7 +537,6 @@
         }
     }
 
-    // Processamento Mammoth (Word Original)
     async function processDoc(buf) {
         document.getElementById("uploadArea").style.display = "none";
         document.getElementById("searchContainer").style.display = "flex";
@@ -526,10 +546,10 @@
         try {
             const result = await mammoth.convertToHtml({ arrayBuffer: buf });
             docHtml = result.value;
-            saveToDB(docHtml); 
-
+            
             const v = document.getElementById("viewer");
             v.innerHTML = docHtml;
+            ensureActionButtons(); 
             v.style.display = "none"; 
         } catch (err) {
             console.error(err);
@@ -548,10 +568,60 @@
         
         const v = document.getElementById("viewer");
         v.innerHTML = docHtml;
+        ensureActionButtons(); 
         v.style.display = "none"; 
     }
 
-    // Sincronização Inteligente
+    // Injeta os botões de ação APENAS nas linhas criadas manualmente, e limpa as linhas do Word
+    function ensureActionButtons() {
+        const viewer = document.getElementById("viewer");
+        let modified = false;
+
+        // Identifica tabelas criadas manualmente pelo botão + no passado
+        // (Elas foram criadas com margin-top: 15px na tabela isolada)
+        viewer.querySelectorAll("table").forEach(table => {
+            if (table.style.marginTop === "15px" || table.querySelector('.custom-row')) {
+                table.querySelectorAll("tr").forEach(tr => {
+                    tr.classList.add('custom-row');
+                });
+            }
+        });
+
+        // Varre todas as linhas
+        viewer.querySelectorAll("tr").forEach(tr => {
+            const hasActions = tr.querySelector('.desktop-actions');
+            
+            if (tr.classList.contains('custom-row')) {
+                // É linha customizada criada pelo app: DEVE ter os botões
+                if (!hasActions) {
+                    const td = document.createElement('td');
+                    td.className = 'desktop-actions';
+                    td.style.border = "1px solid #333";
+                    td.style.padding = "8px";
+                    td.contentEditable = "false";
+                    td.innerHTML = `
+                        <button class="action-btn btn-edit" onclick="toggleEditRow(this)">EDITAR</button>
+                        <button class="action-btn btn-save-row" style="display:none;" onclick="toggleEditRow(this)">SALVAR</button>
+                        <button class="action-btn btn-delete" onclick="deleteCustomRow(this)">EXCLUIR</button>
+                    `;
+                    tr.appendChild(td);
+                    modified = true;
+                }
+            } else {
+                // NÃO é linha customizada (é nativa do Word): NÃO DEVE ter os botões
+                if (hasActions) {
+                    hasActions.remove(); // Remove para consertar o erro anterior
+                    modified = true;
+                }
+            }
+        });
+
+        if (modified) {
+            docHtml = viewer.innerHTML;
+            saveToDB(docHtml);
+        }
+    }
+
     async function fetchLatestFromSupabase() {
         if (isProcessing) return;
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -604,7 +674,6 @@
         }
     });
 
-    // Faz o Upload da versão HTML atualizada
     async function uploadHtmlToSupabase(htmlContent) {
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         const fileName = `doc_${Date.now()}.html`; 
@@ -625,7 +694,6 @@
         }
     }
 
-    // Função Otimizada para Salvar
     function debounceSave() {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
@@ -635,6 +703,20 @@
             clone.classList.remove("search-active");
             clone.querySelectorAll('.has-match').forEach(el => el.classList.remove('has-match'));
             
+            // Limpa modo de edição caso salve com a linha ainda aberta
+            clone.querySelectorAll('.editing-mode').forEach(tr => {
+                tr.classList.remove('editing-mode');
+                Array.from(tr.querySelectorAll('td')).filter(td => !td.classList.contains('desktop-actions')).forEach(c => {
+                    c.contentEditable = "false";
+                    c.style.backgroundColor = "";
+                    c.style.outline = "none";
+                });
+                const btnEdit = tr.querySelector('.btn-edit');
+                const btnSave = tr.querySelector('.btn-save-row');
+                if(btnEdit) btnEdit.style.display = "inline-block";
+                if(btnSave) btnSave.style.display = "none";
+            });
+
             const matches = clone.querySelectorAll('.match');
             matches.forEach(el => {
                 const parent = el.parentNode;
@@ -672,7 +754,7 @@
         reader.readAsArrayBuffer(file);
     };
 
-    // Adicionar Nova Tabela
+    // ── ADICIONAR LINHA E FUNÇÕES DE EDIÇÃO/EXCLUSÃO ── //
     function addNewRow() {
         const viewer = document.getElementById("viewer");
         if (!docHtml) {
@@ -688,20 +770,69 @@
         newTable.style.marginTop = "15px";
         newTable.classList.add("has-match"); 
         
+        // Cria a linha com a classe 'custom-row' para os botões não sumirem
         newTable.innerHTML = `
-            <tr class="has-match">
-                <td style="width: 80%; border: 1px solid #333; padding: 8px; color: #fff;" contenteditable="true">Inserir Nome...</td>
-                <td style="width: 20%; border: 1px solid #333; padding: 8px; color: #fff; text-align: center;" contenteditable="true">Info...</td>
+            <tr class="has-match custom-row editing-mode">
+                <td style="width: 60%; border: 1px solid #333; padding: 8px; color: #fff; background-color: #262626; outline: 1px solid #eab308;" contenteditable="true">Inserir Nome...</td>
+                <td style="width: 20%; border: 1px solid #333; padding: 8px; color: #fff; text-align: center; background-color: #262626; outline: 1px solid #eab308;" contenteditable="true">Info...</td>
+                <td class="desktop-actions" style="width: 20%; border: 1px solid #333; padding: 8px; text-align: center;" contenteditable="false">
+                    <button class="action-btn btn-edit" style="display:none;" onclick="toggleEditRow(this)">EDITAR</button>
+                    <button class="action-btn btn-save-row" style="display:inline-block;" onclick="toggleEditRow(this)">SALVAR</button>
+                    <button class="action-btn btn-delete" onclick="deleteCustomRow(this)">EXCLUIR</button>
+                </td>
             </tr>
         `;
 
-        newTable.addEventListener("input", debounceSave);
-        viewer.appendChild(newTable);
+        viewer.insertBefore(newTable, viewer.firstChild);
         debounceSave();
         newTable.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
-    // ── LÓGICA DO HISTÓRICO ── //
+    function toggleEditRow(btn) {
+        const tr = btn.closest('tr');
+        // Seleciona todas as células da linha, EXCETO a de ações
+        const cells = Array.from(tr.querySelectorAll('td')).filter(td => !td.classList.contains('desktop-actions'));
+        const isEditing = tr.classList.contains('editing-mode');
+        
+        const saveBtn = tr.querySelector('.btn-save-row');
+        const editBtn = tr.querySelector('.btn-edit');
+
+        if (!isEditing) {
+            // Entrar em modo de edição
+            cells.forEach(c => {
+                c.contentEditable = "true";
+                c.style.backgroundColor = "#262626";
+                c.style.outline = "1px solid #eab308";
+            });
+            tr.classList.add('editing-mode');
+            if(editBtn) editBtn.style.display = "none";
+            if(saveBtn) saveBtn.style.display = "inline-block";
+        } else {
+            // Salvar e sair do modo de edição
+            cells.forEach(c => {
+                c.contentEditable = "false";
+                c.style.backgroundColor = "";
+                c.style.outline = "none";
+            });
+            tr.classList.remove('editing-mode');
+            if(saveBtn) saveBtn.style.display = "none";
+            if(editBtn) editBtn.style.display = "inline-block";
+            debounceSave();
+        }
+    }
+
+    function deleteCustomRow(btn) {
+        if(confirm("Deseja realmente excluir este registro?")) {
+            const tr = btn.closest('tr');
+            const table = tr.closest('table');
+            tr.remove();
+            if(table && table.querySelectorAll('tr').length === 0) {
+                table.remove();
+            }
+            debounceSave();
+        }
+    }
+
     function logToHistory(target, message) {
         let history = [];
         const existing = target.getAttribute('data-history');
@@ -713,10 +844,11 @@
         target.setAttribute('data-history', JSON.stringify(history));
     }
 
-    // ── ABERTURA DO MODAL ── //
     document.getElementById("viewer").addEventListener("click", function(e) {
         const target = e.target.closest("td, p, li");
-        if (!target) return;
+        
+        // Impede abrir o modal se clicar nos botões, numa célula em modo de edição ou na coluna de ações
+        if (!target || e.target.tagName === 'BUTTON' || target.contentEditable === "true" || target.classList.contains('desktop-actions')) return;
 
         const text = target.textContent.trim();
         if (text === "Inserir Nome..." || text === "Info...") return;
@@ -725,6 +857,7 @@
         
         let clone = target.cloneNode(true);
         clone.querySelectorAll('.status-badge').forEach(b => b.remove());
+        clone.querySelectorAll('.desktop-actions').forEach(b => b.remove()); 
         clone.querySelectorAll('.match').forEach(b => {
             const parent = b.parentNode;
             while(b.firstChild) parent.insertBefore(b.firstChild, b);
@@ -745,7 +878,6 @@
         document.getElementById("chkHistorico").checked = hasHist;
         document.getElementById("chkDeclaracao").checked = hasDecl;
 
-        // Carrega o Histórico Salvo
         const historyData = target.getAttribute('data-history');
         const historyList = document.getElementById("statusHistoryList");
         historyList.innerHTML = ''; 
@@ -772,14 +904,12 @@
         activeElementForStatus = null;
     }
 
-    // ── SALVAR STATUS E CRIAR BADGE ── //
     function saveDocumentStatus() {
         if (!activeElementForStatus) return;
 
         const hist = document.getElementById("chkHistorico").checked;
         const decl = document.getElementById("chkDeclaracao").checked;
 
-        // Verifica o que mudou para registrar no histórico interno
         let oldHist = false, oldDecl = false;
         activeElementForStatus.querySelectorAll('.status-badge').forEach(b => {
             if (b.innerText.includes('HISTÓRICO PRONTO')) oldHist = true;
@@ -805,8 +935,6 @@
             if (decl) labels.push(`DECLARAÇÃO PRONTA (${dataHoje})`);
             
             badge.innerText = labels.join(" | ");
-            
-            // Injeta o badge imediatamente após o texto (na mesma célula/linha)
             activeElementForStatus.appendChild(badge);
         }
 
@@ -814,7 +942,6 @@
         debounceSave(); 
     }
 
-    // ── REMOVER STATUS ── //
     function removeDocumentStatus() {
         if (!activeElementForStatus) return;
 
@@ -832,7 +959,6 @@
         debounceSave();
     }
 
-    // Regex Fonético
     function generateSmartRegex(query) {
         let q = query.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\./g, "").toLowerCase().trim();
         q = q.replace(/(.)\1+/g, "$1").replace(/^h/, "");
@@ -877,7 +1003,7 @@
         nodes.forEach(node => {
             if (node.parentNode && node.parentNode.classList && node.parentNode.classList.contains('status-badge')) return;
 
-            if (regex.test(node.nodeValue)) {
+            if (node.nodeValue.match(regex)) {
                 const span = document.createElement("span");
                 span.innerHTML = node.nodeValue.replace(regex, '<span class="match">$1</span>');
                 node.parentNode.replaceChild(span, node);
@@ -900,6 +1026,7 @@
 
         matchesElements = [...exactMatches, ...phoneticMatches];
         
+        // Garante que células em edição não sejam perdidas
         const editables = viewer.querySelectorAll('td[contenteditable="true"]');
         editables.forEach(td => td.addEventListener("input", debounceSave));
         
@@ -948,7 +1075,6 @@
         document.getElementById("counterText").innerText = `${currentIdx + 1} de ${matchesElements.length}`;
     }
 
-    // Voz
     const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (Speech) {
         const rec = new Speech();
@@ -978,7 +1104,6 @@
         };
     }
 
-    // Carregamento Inicial
     window.onload = async () => {
         await initDB();
         const savedData = await loadFromDB();
