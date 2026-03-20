@@ -499,7 +499,7 @@
     const SYNC_FILE_NAME = "sync_doc.html";
 
     let docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
-    let debounceTimer; 
+    let uploadTimeout;
     let activeElementForStatus = null;
 
     function setMobileLoading(isLoading) {
@@ -511,6 +511,97 @@
         }
     }
 
+    // Obtém o HTML atual do visualizador, removendo realces e classes temporárias
+    function getCleanHtmlFromViewer() {
+        const viewer = document.getElementById("viewer");
+        if (!viewer) return "";
+        const clone = viewer.cloneNode(true);
+        
+        // Remove todas as spans .match, mantendo apenas o texto interno
+        clone.querySelectorAll('.match').forEach(el => {
+            const parent = el.parentNode;
+            while (el.firstChild) parent.insertBefore(el.firstChild, el);
+            parent.removeChild(el);
+        });
+        
+        // Remove classes que não devem ser salvas permanentemente
+        clone.classList.remove("search-active");
+        clone.querySelectorAll('.has-match').forEach(el => el.classList.remove('has-match'));
+        clone.querySelectorAll('.match.active').forEach(el => el.classList.remove('active'));
+        
+        // Remove o estado de edição inline (contenteditable e estilos)
+        clone.querySelectorAll('td[contenteditable="true"]').forEach(td => {
+            td.contentEditable = "false";
+            td.style.backgroundColor = "";
+            td.style.outline = "none";
+        });
+        clone.querySelectorAll('.editing-mode').forEach(el => el.classList.remove('editing-mode'));
+        
+        return clone.innerHTML;
+    }
+
+    // Atualiza a variável global docHtml com o conteúdo limpo atual do visualizador
+    function updateDocHtml() {
+        docHtml = getCleanHtmlFromViewer();
+    }
+
+    // Agenda o upload do docHtml para o Supabase com debounce
+    function scheduleUpload() {
+        clearTimeout(uploadTimeout);
+        uploadTimeout = setTimeout(() => {
+            const ts = Date.now();
+            const htmlComTs = `<!-- sync_ts:${ts} -->\n` + docHtml;
+            uploadHtmlToSupabase(htmlComTs);
+        }, 1500);
+    }
+
+    // Função chamada após qualquer modificação local (edição, adição, exclusão, status)
+    function localChange() {
+        updateDocHtml();
+        scheduleUpload();
+    }
+
+    // Reaplica os botões de ação nas linhas customizadas e adiciona listeners de edição
+    function ensureActionButtons() {
+        const viewer = document.getElementById("viewer");
+        if (!viewer) return;
+
+        // Marca as tabelas que possuem a classe custom-row (geralmente as adicionadas manualmente)
+        viewer.querySelectorAll("table").forEach(table => {
+            if (table.style.marginTop === "15px" || table.querySelector('.custom-row')) {
+                table.querySelectorAll("tr").forEach(tr => tr.classList.add('custom-row'));
+            }
+        });
+
+        viewer.querySelectorAll("tr.custom-row").forEach(tr => {
+            const hasActions = tr.querySelector('.desktop-actions');
+            if (!hasActions) {
+                const td = document.createElement('td');
+                td.className = 'desktop-actions';
+                td.style.border = "1px solid #333";
+                td.style.padding = "8px";
+                td.contentEditable = "false";
+                td.innerHTML = `
+                    <button class="action-btn btn-edit" onclick="toggleEditRow(this)">EDITAR</button>
+                    <button class="action-btn btn-save-row" style="display:none;" onclick="toggleEditRow(this)">SALVAR</button>
+                    <button class="action-btn btn-delete" onclick="deleteCustomRow(this)">EXCLUIR</button>
+                `;
+                tr.appendChild(td);
+            }
+        });
+
+        // Adiciona listener de input para células editáveis
+        viewer.querySelectorAll('td[contenteditable="true"]').forEach(td => {
+            td.removeEventListener('input', onContentEdit);
+            td.addEventListener('input', onContentEdit);
+        });
+    }
+
+    function onContentEdit() {
+        localChange();
+    }
+
+    // Limpa o arquivo atual (com senha)
     function clearFile() {
         const senha = prompt("Digite a senha para trocar o arquivo:");
         if (senha === PASSWORD) {
@@ -530,11 +621,10 @@
         try {
             const result = await mammoth.convertToHtml({ arrayBuffer: buf });
             docHtml = result.value;
-            
             const v = document.getElementById("viewer");
             v.innerHTML = docHtml;
-            ensureActionButtons(); 
-            v.style.display = "none"; 
+            ensureActionButtons();
+            v.style.display = "none";
         } catch (err) {
             console.error(err);
             document.getElementById("uploadArea").style.display = "block";
@@ -549,54 +639,10 @@
         docHtml = htmlData;
         document.getElementById("uploadArea").style.display = "none";
         document.getElementById("searchContainer").style.display = "flex";
-        
         const v = document.getElementById("viewer");
         v.innerHTML = docHtml;
-        ensureActionButtons(); 
-        v.style.display = "none"; 
-    }
-
-    function ensureActionButtons() {
-        const viewer = document.getElementById("viewer");
-        let modified = false;
-
-        viewer.querySelectorAll("table").forEach(table => {
-            if (table.style.marginTop === "15px" || table.querySelector('.custom-row')) {
-                table.querySelectorAll("tr").forEach(tr => {
-                    tr.classList.add('custom-row');
-                });
-            }
-        });
-
-        viewer.querySelectorAll("tr").forEach(tr => {
-            const hasActions = tr.querySelector('.desktop-actions');
-            
-            if (tr.classList.contains('custom-row')) {
-                if (!hasActions) {
-                    const td = document.createElement('td');
-                    td.className = 'desktop-actions';
-                    td.style.border = "1px solid #333";
-                    td.style.padding = "8px";
-                    td.contentEditable = "false";
-                    td.innerHTML = `
-                        <button class="action-btn btn-edit" onclick="toggleEditRow(this)">EDITAR</button>
-                        <button class="action-btn btn-save-row" style="display:none;" onclick="toggleEditRow(this)">SALVAR</button>
-                        <button class="action-btn btn-delete" onclick="deleteCustomRow(this)">EXCLUIR</button>
-                    `;
-                    tr.appendChild(td);
-                    modified = true;
-                }
-            } else {
-                if (hasActions) {
-                    hasActions.remove();
-                    modified = true;
-                }
-            }
-        });
-
-        if (modified) {
-            docHtml = viewer.innerHTML;
-        }
+        ensureActionButtons();
+        v.style.display = "none";
     }
 
     let isFetching = false;
@@ -612,12 +658,10 @@
             if (downloadError || !fileData) return;
 
             const text = await fileData.text();
-
             const match = text.match(/<!-- sync_ts:(\d+) -->/);
             const serverKey = match ? match[1] : text.length.toString();
             const localKey  = localStorage.getItem("lastSyncKey");
 
-            // Só ignora se a chave for exatamente igual
             if (!forcar && serverKey === localKey) return;
 
             const htmlLimpo = text.replace(/<!-- sync_ts:\d+ -->\n?/, "");
@@ -651,7 +695,6 @@
             const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
             await _supabase.storage.from(BUCKET).upload(SYNC_FILE_NAME, blob, { upsert: true });
 
-            // Grava o mesmo timestamp que foi embutido no HTML
             const match = htmlContent.match(/<!-- sync_ts:(\d+) -->/);
             if (match) localStorage.setItem("lastSyncKey", match[1]);
 
@@ -661,43 +704,6 @@
             console.error("Erro no upload de atualização:", ex);
             counter.innerText = "Erro ao salvar na nuvem.";
         }
-    }
-
-    function debounceSave() {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-            const viewer = document.getElementById("viewer");
-            const clone = viewer.cloneNode(true);
-            
-            clone.classList.remove("search-active");
-            clone.querySelectorAll('.has-match').forEach(el => el.classList.remove('has-match'));
-            
-            clone.querySelectorAll('.editing-mode').forEach(tr => {
-                tr.classList.remove('editing-mode');
-                Array.from(tr.querySelectorAll('td')).filter(td => !td.classList.contains('desktop-actions')).forEach(c => {
-                    c.contentEditable = "false";
-                    c.style.backgroundColor = "";
-                    c.style.outline = "none";
-                });
-                const btnEdit = tr.querySelector('.btn-edit');
-                const btnSave = tr.querySelector('.btn-save-row');
-                if(btnEdit) btnEdit.style.display = "inline-block";
-                if(btnSave) btnSave.style.display = "none";
-            });
-
-            const matches = clone.querySelectorAll('.match');
-            matches.forEach(el => {
-                const parent = el.parentNode;
-                while(el.firstChild) parent.insertBefore(el.firstChild, el);
-                parent.removeChild(el);
-            });
-            
-            // Embute timestamp no HTML para os outros dispositivos detectarem mudança
-            const ts = Date.now();
-            const htmlComTs = `<!-- sync_ts:${ts} -->\n` + clone.innerHTML;
-            docHtml = clone.innerHTML;
-            uploadHtmlToSupabase(htmlComTs); 
-        }, 1500); 
     }
 
     const fileInput = document.getElementById("fileInput");
@@ -710,10 +716,9 @@
         const reader = new FileReader();
         reader.onload = async (ev) => {
             await processDoc(ev.target.result);
-            // Embute timestamp e sobe para o Supabase
-            const ts = Date.now();
-            const htmlComTs = `<!-- sync_ts:${ts} -->\n` + docHtml;
-            uploadHtmlToSupabase(htmlComTs);
+            // Após carregar o arquivo, atualizamos docHtml e sobemos com timestamp
+            updateDocHtml();
+            scheduleUpload();
         };
         reader.readAsArrayBuffer(file);
     };
@@ -747,8 +752,9 @@
         `;
 
         viewer.insertBefore(newTable, viewer.firstChild);
-        debounceSave();
+        ensureActionButtons();  // garante listeners
         newTable.scrollIntoView({ behavior: "smooth", block: "center" });
+        localChange();
     }
 
     function toggleEditRow(btn) {
@@ -777,7 +783,7 @@
             tr.classList.remove('editing-mode');
             if(saveBtn) saveBtn.style.display = "none";
             if(editBtn) editBtn.style.display = "inline-block";
-            debounceSave();
+            localChange();  // atualiza após salvar edição
         }
     }
 
@@ -789,7 +795,7 @@
             if(table && table.querySelectorAll('tr').length === 0) {
                 table.remove();
             }
-            debounceSave();
+            localChange();
         }
     }
 
@@ -898,7 +904,7 @@
         }
 
         closeStatusModal();
-        debounceSave(); 
+        localChange();
     }
 
     function removeDocumentStatus() {
@@ -915,7 +921,7 @@
         }
 
         closeStatusModal();
-        debounceSave();
+        localChange();
     }
 
     function generateSmartRegex(query) {
@@ -939,6 +945,7 @@
         const badge = document.getElementById("personBadge");
         const counter = document.getElementById("counterText");
 
+        // Restaura o conteúdo limpo (docHtml) antes de aplicar realces
         viewer.innerHTML = docHtml;
         viewer.classList.remove("search-active");
         
@@ -949,7 +956,7 @@
 
         if (!query.trim()) {
             counter.innerText = "Pronto.";
-            viewer.style.display = "none"; 
+            viewer.style.display = "none";
             return;
         }
 
@@ -961,7 +968,6 @@
 
         nodes.forEach(node => {
             if (node.parentNode && node.parentNode.classList && node.parentNode.classList.contains('status-badge')) return;
-
             if (node.nodeValue.match(regex)) {
                 const span = document.createElement("span");
                 span.innerHTML = node.nodeValue.replace(regex, '<span class="match">$1</span>');
@@ -985,8 +991,8 @@
 
         matchesElements = [...exactMatches, ...phoneticMatches];
         
-        const editables = viewer.querySelectorAll('td[contenteditable="true"]');
-        editables.forEach(td => td.addEventListener("input", debounceSave));
+        // Garante que os botões de ação e listeners estejam presentes
+        ensureActionButtons();
         
         if (matchesElements.length > 0) {
             viewer.style.display = "block"; 
