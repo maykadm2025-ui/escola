@@ -617,8 +617,8 @@
             const serverKey = match ? match[1] : text.length.toString();
             const localKey  = localStorage.getItem("lastSyncKey");
 
-            // Só ignora se a chave for igual E já tiver conteúdo carregado
-            if (!forcar && serverKey === localKey && docHtml !== "") return;
+            // Só ignora se a chave for exatamente igual
+            if (!forcar && serverKey === localKey) return;
 
             const htmlLimpo = text.replace(/<!-- sync_ts:\d+ -->\n?/, "");
             localStorage.setItem("lastSyncKey", serverKey);
