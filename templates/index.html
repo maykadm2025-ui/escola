@@ -9,8 +9,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.21/mammoth.browser.min.js"></script>
     
     <style>
-    
-        /* ── RESET TOTAL ── */
         * { 
             margin: 0;
             padding: 0;
@@ -26,7 +24,6 @@
             overflow-x: hidden;
         }
 
-        /* ── CABEÇALHO COLADO NO TOPO ── */
         .fixed-header {
             position: fixed;
             top: 0;
@@ -61,7 +58,6 @@
             -webkit-text-fill-color: transparent;
         }
 
-        /* Botão + Adicionar Linha */
         .btn-add {
             position: absolute;
             top: 0;
@@ -82,7 +78,6 @@
         }
         .btn-add:active { transform: scale(0.96); }
 
-        /* Controles de Busca */
         .search-controls {
             display: none;
             flex-direction: column;
@@ -134,7 +129,6 @@
         .btn-main { background: #6366f1; color: white; flex: 1; text-transform: uppercase; }
         .btn-clear { background: #2a0a0a; color: #fca5a5; width: 50px; font-size: 16px; }
 
-        /* Status e Navegação */
         .status-row {
             position: relative;
             display: flex;
@@ -178,7 +172,6 @@
 
         #systemLog { display: none !important; }
 
-        /* ── CONTEÚDO PRINCIPAL ── */
         .main-content {
             width: 95%;
             max-width: 900px;
@@ -204,7 +197,6 @@
             cursor: pointer;
         }
 
-        /* Estilo das tabelas Word e Tabela Customizada */
         table { border-collapse: collapse; width: 100%; margin: 15px 0; color: #ccc; }
         td, th { border: 1px solid #333; padding: 8px; font-size: 12px; }
         
@@ -220,7 +212,6 @@
             box-shadow: 0 0 10px #f59e0b;
         }
 
-        /* ── AÇÕES DE LINHA CUSTOMIZADA (DESKTOP/MOBILE) ── */
         .desktop-actions {
             display: table-cell;
             width: 150px;
@@ -244,7 +235,6 @@
         .btn-delete { background: #ef4444; color: #fff; border-color: #b91c1c; }
         .btn-save-row { background: #10b981; color: #fff; border-color: #059669; }
 
-        /* ── MODAL DE STATUS ── */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -254,7 +244,6 @@
             align-items: center;
             justify-content: center;
             backdrop-filter: blur(5px);
-            -webkit-backdrop-filter: blur(5px);
         }
         .modal-box {
             background: #141414;
@@ -382,7 +371,6 @@
                 display: none !important;
             }
             
-            /* Oculta completamente botões de edição/exclusão no Mobile */
             .desktop-actions {
                 display: none !important;
             }
@@ -460,7 +448,7 @@
             <div class="button-actions-row">
                 <button class="btn-voice" id="voiceBtn">🎤</button>
                 <button class="btn-main" onclick="performSearch()">PESQUISAR</button>
-                <button class="btn-clear" onclick="clearFile()">🔄</button>
+                <button class="btn-clear" onclick="triggerFileUpload()">📂</button>
             </div>
             
             <div class="status-row">
@@ -490,7 +478,6 @@
 </main>
 
 <script>
-    // Credenciais injetadas pelo Flask
     const SUPABASE_URL = "{{ supabase_url }}";
     const SUPABASE_KEY = "{{ supabase_key }}";
     const PASSWORD = "{{ password }}";
@@ -511,25 +498,21 @@
         }
     }
 
-    // Obtém o HTML atual do visualizador, removendo realces e classes temporárias
     function getCleanHtmlFromViewer() {
         const viewer = document.getElementById("viewer");
         if (!viewer) return "";
         const clone = viewer.cloneNode(true);
         
-        // Remove todas as spans .match, mantendo apenas o texto interno
         clone.querySelectorAll('.match').forEach(el => {
             const parent = el.parentNode;
             while (el.firstChild) parent.insertBefore(el.firstChild, el);
             parent.removeChild(el);
         });
         
-        // Remove classes que não devem ser salvas permanentemente
         clone.classList.remove("search-active");
         clone.querySelectorAll('.has-match').forEach(el => el.classList.remove('has-match'));
         clone.querySelectorAll('.match.active').forEach(el => el.classList.remove('active'));
         
-        // Remove o estado de edição inline (contenteditable e estilos)
         clone.querySelectorAll('td[contenteditable="true"]').forEach(td => {
             td.contentEditable = "false";
             td.style.backgroundColor = "";
@@ -540,33 +523,28 @@
         return clone.innerHTML;
     }
 
-    // Atualiza a variável global docHtml com o conteúdo limpo atual do visualizador
     function updateDocHtml() {
         docHtml = getCleanHtmlFromViewer();
     }
 
-    // Agenda o upload do docHtml para o Supabase com debounce
     function scheduleUpload() {
         clearTimeout(uploadTimeout);
         uploadTimeout = setTimeout(() => {
             const ts = Date.now();
-            const htmlComTs = `<!-- sync_ts:${ts} -->\n` + docHtml;
-            uploadHtmlToSupabase(htmlComTs);
+            const htmlWithTs = `<!-- ts:${ts} -->\n` + docHtml;
+            uploadHtmlToSupabase(htmlWithTs);
         }, 1500);
     }
 
-    // Função chamada após qualquer modificação local (edição, adição, exclusão, status)
     function localChange() {
         updateDocHtml();
         scheduleUpload();
     }
 
-    // Reaplica os botões de ação nas linhas customizadas e adiciona listeners de edição
     function ensureActionButtons() {
         const viewer = document.getElementById("viewer");
         if (!viewer) return;
 
-        // Marca as tabelas que possuem a classe custom-row (geralmente as adicionadas manualmente)
         viewer.querySelectorAll("table").forEach(table => {
             if (table.style.marginTop === "15px" || table.querySelector('.custom-row')) {
                 table.querySelectorAll("tr").forEach(tr => tr.classList.add('custom-row'));
@@ -590,7 +568,6 @@
             }
         });
 
-        // Adiciona listener de input para células editáveis
         viewer.querySelectorAll('td[contenteditable="true"]').forEach(td => {
             td.removeEventListener('input', onContentEdit);
             td.addEventListener('input', onContentEdit);
@@ -601,15 +578,9 @@
         localChange();
     }
 
-    // Limpa o arquivo atual (com senha)
-    function clearFile() {
-        const senha = prompt("Digite a senha para trocar o arquivo:");
-        if (senha === PASSWORD) {
-            localStorage.removeItem("lastSyncKey");
-            location.reload();
-        } else if (senha !== null) {
-            alert("Senha incorreta!");
-        }
+    // Nova função: acionar o upload de um novo arquivo (trocar arquivo)
+    function triggerFileUpload() {
+        document.getElementById("fileInput").click();
     }
 
     async function processDoc(buf) {
@@ -650,21 +621,39 @@
     async function fetchLatestFromSupabase(forcar) {
         if (isFetching) return;
         isFetching = true;
-        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+            global: {
+                fetch: (url, options) => {
+                    let reqUrl = url;
+                    if (typeof reqUrl === 'string' && reqUrl.includes('/storage/v1/object/')) {
+                        reqUrl += (reqUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+                    }
+                    let reqOptions = Object.assign({}, options || {}, { cache: 'no-store' });
+                    return fetch(reqUrl, reqOptions);
+                }
+            }
+        });
+
         try {
-            const { data: fileData, error: downloadError } = await _supabase.storage
-                .from(BUCKET).download(SYNC_FILE_NAME);
+            const downloadResp = await _supabase.storage.from(BUCKET).download(SYNC_FILE_NAME);
 
-            if (downloadError || !fileData) return;
+            if (downloadResp.error) {
+                console.error("Erro no download:", downloadResp.error);
+                return;
+            }
+            if (!downloadResp.data) return;
 
-            const text = await fileData.text();
-            const match = text.match(/<!-- sync_ts:(\d+) -->/);
+            const text = await downloadResp.data.text();
+            // Extrai timestamp do comentário no início
+            const match = text.match(/<!-- ts:(\d+) -->/);
             const serverKey = match ? match[1] : text.length.toString();
             const localKey  = localStorage.getItem("lastSyncKey");
 
             if (!forcar && serverKey === localKey) return;
 
-            const htmlLimpo = text.replace(/<!-- sync_ts:\d+ -->\n?/, "");
+            // Remove o comentário de timestamp antes de exibir o conteúdo
+            const htmlLimpo = text.replace(/<!-- ts:\d+ -->\n?/, "");
             localStorage.setItem("lastSyncKey", serverKey);
             displayCachedHtml(htmlLimpo);
 
@@ -693,9 +682,17 @@
 
         try {
             const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-            await _supabase.storage.from(BUCKET).upload(SYNC_FILE_NAME, blob, { upsert: true });
+            
+            const uploadResp = await _supabase.storage.from(BUCKET).upload(SYNC_FILE_NAME, blob, { 
+                upsert: true,
+                cacheControl: '0',
+                contentType: 'text/html;charset=utf-8'
+            });
 
-            const match = htmlContent.match(/<!-- sync_ts:(\d+) -->/);
+            if (uploadResp.error) throw uploadResp.error; 
+
+            // Extrai timestamp do comentário para salvar como chave local
+            const match = htmlContent.match(/<!-- ts:(\d+) -->/);
             if (match) localStorage.setItem("lastSyncKey", match[1]);
 
             counter.innerText = "Sincronizado!";
@@ -716,14 +713,12 @@
         const reader = new FileReader();
         reader.onload = async (ev) => {
             await processDoc(ev.target.result);
-            // Após carregar o arquivo, atualizamos docHtml e sobemos com timestamp
             updateDocHtml();
             scheduleUpload();
         };
         reader.readAsArrayBuffer(file);
     };
 
-    // ── ADICIONAR LINHA E FUNÇÕES DE EDIÇÃO/EXCLUSÃO ── //
     function addNewRow() {
         const viewer = document.getElementById("viewer");
         if (!docHtml) {
@@ -752,7 +747,7 @@
         `;
 
         viewer.insertBefore(newTable, viewer.firstChild);
-        ensureActionButtons();  // garante listeners
+        ensureActionButtons();
         newTable.scrollIntoView({ behavior: "smooth", block: "center" });
         localChange();
     }
@@ -783,7 +778,7 @@
             tr.classList.remove('editing-mode');
             if(saveBtn) saveBtn.style.display = "none";
             if(editBtn) editBtn.style.display = "inline-block";
-            localChange();  // atualiza após salvar edição
+            localChange();
         }
     }
 
@@ -945,7 +940,6 @@
         const badge = document.getElementById("personBadge");
         const counter = document.getElementById("counterText");
 
-        // Restaura o conteúdo limpo (docHtml) antes de aplicar realces
         viewer.innerHTML = docHtml;
         viewer.classList.remove("search-active");
         
@@ -991,7 +985,6 @@
 
         matchesElements = [...exactMatches, ...phoneticMatches];
         
-        // Garante que os botões de ação e listeners estejam presentes
         ensureActionButtons();
         
         if (matchesElements.length > 0) {
@@ -1070,10 +1063,10 @@
 
     window.onload = async () => {
         setMobileLoading(true);
-        await fetchLatestFromSupabase(true); // força download na primeira carga
+        await fetchLatestFromSupabase(true);
 
         setInterval(() => {
-            fetchLatestFromSupabase(false); // nas demais, só baixa se mudou
+            fetchLatestFromSupabase(false);
         }, 10000);
     };
 
