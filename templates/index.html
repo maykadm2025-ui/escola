@@ -535,7 +535,7 @@
         const senha = prompt("Digite a senha para trocar o arquivo:");
         if (senha === PASSWORD) {
             db.transaction(["documents"], "readwrite").objectStore("documents").delete("currentFile");
-            localStorage.removeItem("lastSyncTimestamp");
+            localStorage.removeItem("lastSyncKey");
             sessionStorage.setItem("skipSupabaseFetch", "true"); 
             location.reload();
         } else if (senha !== null) {
@@ -626,30 +626,36 @@
         if (isProcessing) return;
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         try {
-            // ── CORREÇÃO: busca diretamente o arquivo de nome fixo ──
+            // Usa list() para obter metadados (size + updated_at) sem baixar o arquivo
+            const { data: listData, error: listError } = await _supabase.storage
+                .from(BUCKET)
+                .list('', { search: SYNC_FILE_NAME });
+
+            if (listError || !listData || listData.length === 0) return;
+
+            const fileInfo = listData.find(f => f.name === SYNC_FILE_NAME);
+            if (!fileInfo) return;
+
+            // Chave de comparação: tamanho + data de atualização do servidor
+            const serverKey = `${fileInfo.metadata?.size}_${fileInfo.updated_at}`;
+            const localKey  = localStorage.getItem("lastSyncKey");
+
+            if (serverKey === localKey) return; // nada mudou, não baixa
+
+            // Mudou: baixa o conteúdo
             const { data: fileData, error: downloadError } = await _supabase.storage
                 .from(BUCKET)
                 .download(SYNC_FILE_NAME);
 
-            if (downloadError) return; // arquivo ainda não existe, ignora
+            if (downloadError || !fileData) return;
 
-            if (fileData) {
-                // Compara pelo tamanho+última modificação usando o cabeçalho ETag/size
-                // para evitar recarregar quando não houve mudança real.
-                // Usamos o texto do arquivo como chave de comparação via hash simples.
-                const text = await fileData.text();
-                const localHash = localStorage.getItem("lastSyncHash");
-                const newHash = String(text.length) + "_" + text.slice(-50);
+            const text = await fileData.text();
+            localStorage.setItem("lastSyncKey", serverKey);
+            displayCachedHtml(text);
+            saveToDB(text);
 
-                if (newHash === localHash) return; // nada mudou
-
-                localStorage.setItem("lastSyncHash", newHash);
-                displayCachedHtml(text);
-                saveToDB(text);
-
-                if (document.getElementById("searchInput").value.trim() !== "") {
-                    performSearch();
-                }
+            if (document.getElementById("searchInput").value.trim() !== "") {
+                performSearch();
             }
         } catch (err) {
             console.error("Erro ao buscar arquivo do Supabase:", err);
@@ -676,8 +682,13 @@
             // ── CORREÇÃO: sempre sobrescreve o mesmo arquivo com upsert: true ──
             await _supabase.storage.from(BUCKET).upload(SYNC_FILE_NAME, blob, { upsert: true });
 
-            const newHash = String(htmlContent.length) + "_" + htmlContent.slice(-50);
-            localStorage.setItem("lastSyncHash", newHash);
+            // Após upload, busca os metadados para gravar a chave correta
+            const { data: listData } = await _supabase.storage
+                .from(BUCKET).list('', { search: SYNC_FILE_NAME });
+            const fileInfo = listData && listData.find(f => f.name === SYNC_FILE_NAME);
+            if (fileInfo) {
+                localStorage.setItem("lastSyncKey", `${fileInfo.metadata?.size}_${fileInfo.updated_at}`);
+            }
             
             counter.innerText = "Sincronizado!";
             setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
