@@ -599,8 +599,11 @@
         }
     }
 
-    async function fetchLatestFromSupabase() {
-        if (isProcessing) return;
+    let isFetching = false;
+
+    async function fetchLatestFromSupabase(forcar) {
+        if (isFetching) return;
+        isFetching = true;
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         try {
             const { data: fileData, error: downloadError } = await _supabase.storage
@@ -610,16 +613,14 @@
 
             const text = await fileData.text();
 
-            // Extrai o timestamp embutido no HTML como chave de comparação
             const match = text.match(/<!-- sync_ts:(\d+) -->/);
             const serverKey = match ? match[1] : text.length.toString();
             const localKey  = localStorage.getItem("lastSyncKey");
 
-            if (serverKey === localKey) return; // nada mudou
+            // Só ignora se a chave for igual E já tiver conteúdo carregado
+            if (!forcar && serverKey === localKey && docHtml !== "") return;
 
-            // Remove o comentário de timestamp antes de exibir
             const htmlLimpo = text.replace(/<!-- sync_ts:\d+ -->\n?/, "");
-
             localStorage.setItem("lastSyncKey", serverKey);
             displayCachedHtml(htmlLimpo);
 
@@ -629,14 +630,14 @@
         } catch (err) {
             console.error("Erro ao buscar arquivo do Supabase:", err);
         } finally {
-            isProcessing = false;
+            isFetching = false;
             setMobileLoading(false);
         }
     }
 
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === 'visible') {
-            fetchLatestFromSupabase();
+            fetchLatestFromSupabase(false);
         }
     });
 
@@ -1062,11 +1063,11 @@
     }
 
     window.onload = async () => {
-        isProcessing = false;
-        await fetchLatestFromSupabase();
+        setMobileLoading(true);
+        await fetchLatestFromSupabase(true); // força download na primeira carga
 
         setInterval(() => {
-            fetchLatestFromSupabase();
+            fetchLatestFromSupabase(false); // nas demais, só baixa se mudou
         }, 10000);
     };
 
