@@ -496,10 +496,9 @@
     const PASSWORD = "{{ password }}";
 
     const BUCKET = "documentos";
-    // ── CORREÇÃO: nome fixo para o arquivo de sincronização ──
     const SYNC_FILE_NAME = "sync_doc.html";
 
-    let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
+    let docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
     let debounceTimer; 
     let activeElementForStatus = null;
 
@@ -512,31 +511,10 @@
         }
     }
 
-    function initDB() {
-        return new Promise((res) => {
-            const req = indexedDB.open("WordSearchDB", 1);
-            req.onsuccess = e => { db = e.target.result; res(); };
-            req.onupgradeneeded = e => { e.target.result.createObjectStore("documents"); };
-        });
-    }
-
-    function saveToDB(data) {
-        db.transaction(["documents"], "readwrite").objectStore("documents").put(data, "currentFile");
-    }
-
-    function loadFromDB() {
-        return new Promise((res) => {
-            const req = db.transaction(["documents"], "readonly").objectStore("documents").get("currentFile");
-            req.onsuccess = e => res(e.target.result || null);
-        });
-    }
-
     function clearFile() {
         const senha = prompt("Digite a senha para trocar o arquivo:");
         if (senha === PASSWORD) {
-            db.transaction(["documents"], "readwrite").objectStore("documents").delete("currentFile");
             localStorage.removeItem("lastSyncKey");
-            sessionStorage.setItem("skipSupabaseFetch", "true"); 
             location.reload();
         } else if (senha !== null) {
             alert("Senha incorreta!");
@@ -618,7 +596,6 @@
 
         if (modified) {
             docHtml = viewer.innerHTML;
-            saveToDB(docHtml);
         }
     }
 
@@ -645,7 +622,6 @@
 
             localStorage.setItem("lastSyncKey", serverKey);
             displayCachedHtml(htmlLimpo);
-            saveToDB(htmlLimpo);
 
             if (document.getElementById("searchInput").value.trim() !== "") {
                 performSearch();
@@ -719,7 +695,6 @@
             const ts = Date.now();
             const htmlComTs = `<!-- sync_ts:${ts} -->\n` + clone.innerHTML;
             docHtml = clone.innerHTML;
-            saveToDB(docHtml);
             uploadHtmlToSupabase(htmlComTs); 
         }, 1500); 
     }
@@ -1087,23 +1062,8 @@
     }
 
     window.onload = async () => {
-        await initDB();
-        const savedData = await loadFromDB();
-        
-        if (savedData) {
-            if (typeof savedData === 'string') {
-                displayCachedHtml(savedData);
-            } else {
-                processDoc(savedData);
-            }
-        } 
-        
-        if (!sessionStorage.getItem("skipSupabaseFetch")) {
-            isProcessing = false; // garante que não está travado
-            await fetchLatestFromSupabase();
-        } else {
-            sessionStorage.removeItem("skipSupabaseFetch");
-        }
+        isProcessing = false;
+        await fetchLatestFromSupabase();
 
         setInterval(() => {
             fetchLatestFromSupabase();
