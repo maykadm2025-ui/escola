@@ -493,10 +493,11 @@
     // Credenciais injetadas pelo Flask
     const SUPABASE_URL = "{{ supabase_url }}";
     const SUPABASE_KEY = "{{ supabase_key }}";
-    const PASSWORD = "{{ password }}";  // senha usada na função clearFile
+    const PASSWORD = "{{ password }}";
 
     const BUCKET = "documentos";
-    const SYNC_FILE_NAME = "current.html";  // arquivo único de sincronização
+    // ── CORREÇÃO: nome fixo para o arquivo de sincronização ──
+    const SYNC_FILE_NAME = "sync_doc.html";
 
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
     let debounceTimer; 
@@ -533,14 +534,9 @@
     function clearFile() {
         const senha = prompt("Digite a senha para trocar o arquivo:");
         if (senha === PASSWORD) {
-            // Limpar dados locais
             db.transaction(["documents"], "readwrite").objectStore("documents").delete("currentFile");
-            localStorage.removeItem("lastFileName");
-            localStorage.removeItem("lastSyncTime");
-            // Remover arquivo do Supabase
-            const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            _supabase.storage.from(BUCKET).remove([SYNC_FILE_NAME]).catch(console.error);
-            sessionStorage.setItem("skipSupabaseFetch", "true");
+            localStorage.removeItem("lastSyncTimestamp");
+            sessionStorage.setItem("skipSupabaseFetch", "true"); 
             location.reload();
         } else if (senha !== null) {
             alert("Senha incorreta!");
@@ -582,13 +578,10 @@
         v.style.display = "none"; 
     }
 
-    // Injeta os botões de ação APENAS nas linhas criadas manualmente, e limpa as linhas do Word
     function ensureActionButtons() {
         const viewer = document.getElementById("viewer");
         let modified = false;
 
-        // Identifica tabelas criadas manualmente pelo botão + no passado
-        // (Elas foram criadas com margin-top: 15px na tabela isolada)
         viewer.querySelectorAll("table").forEach(table => {
             if (table.style.marginTop === "15px" || table.querySelector('.custom-row')) {
                 table.querySelectorAll("tr").forEach(tr => {
@@ -597,12 +590,10 @@
             }
         });
 
-        // Varre todas as linhas
         viewer.querySelectorAll("tr").forEach(tr => {
             const hasActions = tr.querySelector('.desktop-actions');
             
             if (tr.classList.contains('custom-row')) {
-                // É linha customizada criada pelo app: DEVE ter os botões
                 if (!hasActions) {
                     const td = document.createElement('td');
                     td.className = 'desktop-actions';
@@ -618,9 +609,8 @@
                     modified = true;
                 }
             } else {
-                // NÃO é linha customizada (é nativa do Word): NÃO DEVE ter os botões
                 if (hasActions) {
-                    hasActions.remove(); // Remove para consertar o erro anterior
+                    hasActions.remove();
                     modified = true;
                 }
             }
@@ -632,62 +622,40 @@
         }
     }
 
-    async function uploadHtmlToSupabase(htmlContent) {
-        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        const counter = document.getElementById("counterText");
-        
-        counter.innerText = "Salvando na nuvem...";
-        try {
-            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-            // Usa upsert para substituir se já existir
-            await _supabase.storage.from(BUCKET).upload(SYNC_FILE_NAME, blob, { upsert: true });
-            const now = Date.now();
-            localStorage.setItem("lastSyncTime", now.toString());
-            localStorage.setItem("lastFileName", SYNC_FILE_NAME);
-            counter.innerText = "Sincronizado!";
-            setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
-        } catch(ex) {
-            console.error("Erro no upload de atualização:", ex);
-            counter.innerText = "Erro ao salvar na nuvem.";
-        }
-    }
-
     async function fetchLatestFromSupabase() {
         if (isProcessing) return;
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         try {
-            // Lista para obter o arquivo de sincronização
-            const { data: files, error: listError } = await _supabase.storage.from(BUCKET).list('', {
-                search: SYNC_FILE_NAME
-            });
-            if (listError || !files || files.length === 0) {
-                // Nenhum arquivo de sincronização encontrado
-                return;
-            }
-            const file = files[0];
-            if (file.name !== SYNC_FILE_NAME) return;
-            
-            const remoteUpdated = new Date(file.updated_at).getTime();
-            const lastSync = parseInt(localStorage.getItem("lastSyncTime") || "0");
-            
-            if (remoteUpdated > lastSync) {
-                // Arquivo remoto mais novo, baixar
-                const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(SYNC_FILE_NAME);
-                if (downloadError) throw downloadError;
-                if (fileData) {
-                    const text = await fileData.text();
-                    displayCachedHtml(text);
-                    saveToDB(text);
-                    localStorage.setItem("lastSyncTime", remoteUpdated.toString());
-                    localStorage.setItem("lastFileName", SYNC_FILE_NAME);
-                    // Se houver uma busca ativa, reaplica
-                    if (document.getElementById("searchInput").value.trim() !== "") {
-                        performSearch();
-                    }
+            // ── CORREÇÃO: busca diretamente o arquivo de nome fixo ──
+            const { data: fileData, error: downloadError } = await _supabase.storage
+                .from(BUCKET)
+                .download(SYNC_FILE_NAME);
+
+            if (downloadError) return; // arquivo ainda não existe, ignora
+
+            if (fileData) {
+                // Compara pelo tamanho+última modificação usando o cabeçalho ETag/size
+                // para evitar recarregar quando não houve mudança real.
+                // Usamos o texto do arquivo como chave de comparação via hash simples.
+                const text = await fileData.text();
+                const localHash = localStorage.getItem("lastSyncHash");
+                const newHash = String(text.length) + "_" + text.slice(-50);
+
+                if (newHash === localHash) return; // nada mudou
+
+                localStorage.setItem("lastSyncHash", newHash);
+                displayCachedHtml(text);
+                saveToDB(text);
+
+                if (document.getElementById("searchInput").value.trim() !== "") {
+                    performSearch();
                 }
             }
         } catch (err) {
             console.error("Erro ao buscar arquivo do Supabase:", err);
+        } finally {
+            isProcessing = false;
+            setMobileLoading(false);
         }
     }
 
@@ -696,6 +664,28 @@
             fetchLatestFromSupabase();
         }
     });
+
+    async function uploadHtmlToSupabase(htmlContent) {
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const counter = document.getElementById("counterText");
+        
+        counter.innerText = "Salvando na nuvem...";
+
+        try {
+            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+            // ── CORREÇÃO: sempre sobrescreve o mesmo arquivo com upsert: true ──
+            await _supabase.storage.from(BUCKET).upload(SYNC_FILE_NAME, blob, { upsert: true });
+
+            const newHash = String(htmlContent.length) + "_" + htmlContent.slice(-50);
+            localStorage.setItem("lastSyncHash", newHash);
+            
+            counter.innerText = "Sincronizado!";
+            setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
+        } catch(ex) {
+            console.error("Erro no upload de atualização:", ex);
+            counter.innerText = "Erro ao salvar na nuvem.";
+        }
+    }
 
     function debounceSave() {
         clearTimeout(debounceTimer);
@@ -706,7 +696,6 @@
             clone.classList.remove("search-active");
             clone.querySelectorAll('.has-match').forEach(el => el.classList.remove('has-match'));
             
-            // Limpa modo de edição caso salve com a linha ainda aberta
             clone.querySelectorAll('.editing-mode').forEach(tr => {
                 tr.classList.remove('editing-mode');
                 Array.from(tr.querySelectorAll('td')).filter(td => !td.classList.contains('desktop-actions')).forEach(c => {
@@ -743,8 +732,8 @@
         const reader = new FileReader();
         reader.onload = async (ev) => {
             await processDoc(ev.target.result);
-            // Após processar o .docx, salva o HTML gerado como arquivo de sincronização
-            await uploadHtmlToSupabase(docHtml);
+            // ── CORREÇÃO: após processar o docx, sobe o HTML gerado com nome fixo ──
+            uploadHtmlToSupabase(docHtml);
         };
         reader.readAsArrayBuffer(file);
     };
@@ -765,17 +754,16 @@
         newTable.style.marginTop = "15px";
         newTable.classList.add("has-match"); 
         
-        // Cria a linha com a classe 'custom-row' para os botões não sumirem
         newTable.innerHTML = `
             <tr class="has-match custom-row editing-mode">
-                <td style="width: 60%; border: 1px solid #333; padding: 8px; color: #fff; background-color: #262626; outline: 1px solid #eab308;" contenteditable="true">Inserir Nome...<\/td>
-                <td style="width: 20%; border: 1px solid #333; padding: 8px; color: #fff; text-align: center; background-color: #262626; outline: 1px solid #eab308;" contenteditable="true">Info...<\/td>
+                <td style="width: 60%; border: 1px solid #333; padding: 8px; color: #fff; background-color: #262626; outline: 1px solid #eab308;" contenteditable="true">Inserir Nome...</td>
+                <td style="width: 20%; border: 1px solid #333; padding: 8px; color: #fff; text-align: center; background-color: #262626; outline: 1px solid #eab308;" contenteditable="true">Info...</td>
                 <td class="desktop-actions" style="width: 20%; border: 1px solid #333; padding: 8px; text-align: center;" contenteditable="false">
-                    <button class="action-btn btn-edit" style="display:none;" onclick="toggleEditRow(this)">EDITAR<\/button>
-                    <button class="action-btn btn-save-row" style="display:inline-block;" onclick="toggleEditRow(this)">SALVAR<\/button>
-                    <button class="action-btn btn-delete" onclick="deleteCustomRow(this)">EXCLUIR<\/button>
-                <\/td>
-             <\/tr>
+                    <button class="action-btn btn-edit" style="display:none;" onclick="toggleEditRow(this)">EDITAR</button>
+                    <button class="action-btn btn-save-row" style="display:inline-block;" onclick="toggleEditRow(this)">SALVAR</button>
+                    <button class="action-btn btn-delete" onclick="deleteCustomRow(this)">EXCLUIR</button>
+                </td>
+            </tr>
         `;
 
         viewer.insertBefore(newTable, viewer.firstChild);
@@ -785,7 +773,6 @@
 
     function toggleEditRow(btn) {
         const tr = btn.closest('tr');
-        // Seleciona todas as células da linha, EXCETO a de ações
         const cells = Array.from(tr.querySelectorAll('td')).filter(td => !td.classList.contains('desktop-actions'));
         const isEditing = tr.classList.contains('editing-mode');
         
@@ -793,7 +780,6 @@
         const editBtn = tr.querySelector('.btn-edit');
 
         if (!isEditing) {
-            // Entrar em modo de edição
             cells.forEach(c => {
                 c.contentEditable = "true";
                 c.style.backgroundColor = "#262626";
@@ -803,7 +789,6 @@
             if(editBtn) editBtn.style.display = "none";
             if(saveBtn) saveBtn.style.display = "inline-block";
         } else {
-            // Salvar e sair do modo de edição
             cells.forEach(c => {
                 c.contentEditable = "false";
                 c.style.backgroundColor = "";
@@ -842,7 +827,6 @@
     document.getElementById("viewer").addEventListener("click", function(e) {
         const target = e.target.closest("td, p, li");
         
-        // Impede abrir o modal se clicar nos botões, numa célula em modo de edição ou na coluna de ações
         if (!target || e.target.tagName === 'BUTTON' || target.contentEditable === "true" || target.classList.contains('desktop-actions')) return;
 
         const text = target.textContent.trim();
@@ -1021,7 +1005,6 @@
 
         matchesElements = [...exactMatches, ...phoneticMatches];
         
-        // Garante que células em edição não sejam perdidas
         const editables = viewer.querySelectorAll('td[contenteditable="true"]');
         editables.forEach(td => td.addEventListener("input", debounceSave));
         
