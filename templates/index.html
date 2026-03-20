@@ -626,33 +626,38 @@
         if (isProcessing) return;
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         try {
-            // Usa list() para obter metadados (size + updated_at) sem baixar o arquivo
             const { data: listData, error: listError } = await _supabase.storage
-                .from(BUCKET)
-                .list('', { search: SYNC_FILE_NAME });
+                .from(BUCKET).list('');
 
             if (listError || !listData || listData.length === 0) return;
 
-            const fileInfo = listData.find(f => f.name === SYNC_FILE_NAME);
+            const fileInfo = listData
+                .filter(f => f.name.endsWith('.html') || f.name.endsWith('.docx'))
+                .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))[0];
+
             if (!fileInfo) return;
 
-            // Chave de comparação: updated_at do servidor (sempre preenchido)
-            const serverKey = fileInfo.updated_at || fileInfo.created_at || "";
+            const serverKey = fileInfo.name + "_" + (fileInfo.updated_at || fileInfo.created_at || "");
             const localKey  = localStorage.getItem("lastSyncKey");
 
-            if (serverKey && serverKey === localKey) return; // nada mudou, não baixa
+            if (serverKey === localKey) return; // nada mudou
 
-            // Mudou: baixa o conteúdo
             const { data: fileData, error: downloadError } = await _supabase.storage
-                .from(BUCKET)
-                .download(SYNC_FILE_NAME);
+                .from(BUCKET).download(fileInfo.name);
 
             if (downloadError || !fileData) return;
 
-            const text = await fileData.text();
-            localStorage.setItem("lastSyncKey", serverKey);
-            displayCachedHtml(text);
-            saveToDB(text);
+            let text;
+            if (fileInfo.name.endsWith('.html')) {
+                text = await fileData.text();
+                localStorage.setItem("lastSyncKey", serverKey);
+                displayCachedHtml(text);
+                saveToDB(text);
+            } else if (fileInfo.name.endsWith('.docx')) {
+                const arrayBuffer = await fileData.arrayBuffer();
+                localStorage.setItem("lastSyncKey", serverKey);
+                await processDoc(arrayBuffer);
+            }
 
             if (document.getElementById("searchInput").value.trim() !== "") {
                 performSearch();
@@ -679,18 +684,16 @@
 
         try {
             const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-            // ── CORREÇÃO: sempre sobrescreve o mesmo arquivo com upsert: true ──
             await _supabase.storage.from(BUCKET).upload(SYNC_FILE_NAME, blob, { upsert: true });
 
-            // Após upload, busca os metadados para gravar a chave correta
-            const { data: listData } = await _supabase.storage
-                .from(BUCKET).list('', { search: SYNC_FILE_NAME });
+            // Busca o updated_at real após upload para gravar chave igual ao fetch
+            const { data: listData } = await _supabase.storage.from(BUCKET).list('');
             const fileInfo = listData && listData.find(f => f.name === SYNC_FILE_NAME);
             if (fileInfo) {
-                const serverKey = fileInfo.updated_at || fileInfo.created_at || "";
-                if (serverKey) localStorage.setItem("lastSyncKey", serverKey);
+                const serverKey = fileInfo.name + "_" + (fileInfo.updated_at || fileInfo.created_at || "");
+                localStorage.setItem("lastSyncKey", serverKey);
             }
-            
+
             counter.innerText = "Sincronizado!";
             setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
         } catch(ex) {
@@ -1107,7 +1110,10 @@
         } 
         
         if (!sessionStorage.getItem("skipSupabaseFetch")) {
-            fetchLatestFromSupabase();
+            isProcessing = false; // garante que não está travado
+            await fetchLatestFromSupabase();
+        } else {
+            sessionStorage.removeItem("skipSupabaseFetch");
         }
 
         setInterval(() => {
