@@ -636,11 +636,11 @@
             const fileInfo = listData.find(f => f.name === SYNC_FILE_NAME);
             if (!fileInfo) return;
 
-            // Chave de comparação: tamanho + data de atualização do servidor
-            const serverKey = `${fileInfo.metadata?.size}_${fileInfo.updated_at}`;
+            // Chave de comparação: updated_at do servidor (sempre preenchido)
+            const serverKey = fileInfo.updated_at || fileInfo.created_at || "";
             const localKey  = localStorage.getItem("lastSyncKey");
 
-            if (serverKey === localKey) return; // nada mudou, não baixa
+            if (serverKey && serverKey === localKey) return; // nada mudou, não baixa
 
             // Mudou: baixa o conteúdo
             const { data: fileData, error: downloadError } = await _supabase.storage
@@ -687,7 +687,8 @@
                 .from(BUCKET).list('', { search: SYNC_FILE_NAME });
             const fileInfo = listData && listData.find(f => f.name === SYNC_FILE_NAME);
             if (fileInfo) {
-                localStorage.setItem("lastSyncKey", `${fileInfo.metadata?.size}_${fileInfo.updated_at}`);
+                const serverKey = fileInfo.updated_at || fileInfo.created_at || "";
+                if (serverKey) localStorage.setItem("lastSyncKey", serverKey);
             }
             
             counter.innerText = "Sincronizado!";
