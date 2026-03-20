@@ -496,7 +496,6 @@
     const PASSWORD = "{{ password }}";  // senha usada na função clearFile
 
     const BUCKET = "documentos";
-    const SYNC_FILE_NAME = "current.html";  // arquivo único de sincronização
 
     let db, docHtml = "", matchesElements = [], currentIdx = -1, isProcessing = false;
     let debounceTimer; 
@@ -532,15 +531,10 @@
 
     function clearFile() {
         const senha = prompt("Digite a senha para trocar o arquivo:");
-        if (senha === PASSWORD) {
-            // Limpar dados locais
+        if (senha === PASSWORD) {   // agora usa a variável vinda do Flask
             db.transaction(["documents"], "readwrite").objectStore("documents").delete("currentFile");
             localStorage.removeItem("lastFileName");
-            localStorage.removeItem("lastSyncTime");
-            // Remover arquivo do Supabase
-            const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            _supabase.storage.from(BUCKET).remove([SYNC_FILE_NAME]).catch(console.error);
-            sessionStorage.setItem("skipSupabaseFetch", "true");
+            sessionStorage.setItem("skipSupabaseFetch", "true"); 
             location.reload();
         } else if (senha !== null) {
             alert("Senha incorreta!");
@@ -632,55 +626,39 @@
         }
     }
 
-    async function uploadHtmlToSupabase(htmlContent) {
-        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        const counter = document.getElementById("counterText");
-        
-        counter.innerText = "Salvando na nuvem...";
-        try {
-            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-            // Usa upsert para substituir se já existir
-            await _supabase.storage.from(BUCKET).upload(SYNC_FILE_NAME, blob, { upsert: true });
-            const now = Date.now();
-            localStorage.setItem("lastSyncTime", now.toString());
-            localStorage.setItem("lastFileName", SYNC_FILE_NAME);
-            counter.innerText = "Sincronizado!";
-            setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
-        } catch(ex) {
-            console.error("Erro no upload de atualização:", ex);
-            counter.innerText = "Erro ao salvar na nuvem.";
-        }
-    }
-
     async function fetchLatestFromSupabase() {
         if (isProcessing) return;
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         try {
-            // Lista para obter o arquivo de sincronização
-            const { data: files, error: listError } = await _supabase.storage.from(BUCKET).list('', {
-                search: SYNC_FILE_NAME
+            const { data, error } = await _supabase.storage.from(BUCKET).list('', {
+                sortBy: { column: 'created_at', order: 'desc' }
             });
-            if (listError || !files || files.length === 0) {
-                // Nenhum arquivo de sincronização encontrado
-                return;
-            }
-            const file = files[0];
-            if (file.name !== SYNC_FILE_NAME) return;
-            
-            const remoteUpdated = new Date(file.updated_at).getTime();
-            const lastSync = parseInt(localStorage.getItem("lastSyncTime") || "0");
-            
-            if (remoteUpdated > lastSync) {
-                // Arquivo remoto mais novo, baixar
-                const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(SYNC_FILE_NAME);
+
+            if (error || !data || data.length === 0) return;
+
+            const latestFile = data.find(f => f.name.endsWith('.docx') || f.name.endsWith('.html'));
+            if (!latestFile) return;
+
+            const localFileName = localStorage.getItem("lastFileName");
+
+            if (latestFile.name !== localFileName) {
+                isProcessing = true; 
+                setMobileLoading(true);
+
+                const { data: fileData, error: downloadError } = await _supabase.storage.from(BUCKET).download(latestFile.name);
                 if (downloadError) throw downloadError;
+
                 if (fileData) {
-                    const text = await fileData.text();
-                    displayCachedHtml(text);
-                    saveToDB(text);
-                    localStorage.setItem("lastSyncTime", remoteUpdated.toString());
-                    localStorage.setItem("lastFileName", SYNC_FILE_NAME);
-                    // Se houver uma busca ativa, reaplica
+                    if (latestFile.name.endsWith('.docx')) {
+                        const arrayBuffer = await fileData.arrayBuffer();
+                        await processDoc(arrayBuffer);
+                    } else if (latestFile.name.endsWith('.html')) {
+                        const text = await fileData.text();
+                        displayCachedHtml(text);
+                        saveToDB(text); 
+                    }
+                    localStorage.setItem("lastFileName", latestFile.name);
+
                     if (document.getElementById("searchInput").value.trim() !== "") {
                         performSearch();
                     }
@@ -688,6 +666,9 @@
             }
         } catch (err) {
             console.error("Erro ao buscar arquivo do Supabase:", err);
+        } finally {
+            isProcessing = false;
+            setMobileLoading(false);
         }
     }
 
@@ -696,6 +677,26 @@
             fetchLatestFromSupabase();
         }
     });
+
+    async function uploadHtmlToSupabase(htmlContent) {
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const fileName = `doc_${Date.now()}.html`; 
+        const counter = document.getElementById("counterText");
+        
+        counter.innerText = "Salvando na nuvem...";
+
+        try {
+            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+            await _supabase.storage.from(BUCKET).upload(fileName, blob);
+            localStorage.setItem("lastFileName", fileName); 
+            
+            counter.innerText = "Sincronizado!";
+            setTimeout(() => { if(counter.innerText === "Sincronizado!") counter.innerText = "Pronto."; }, 3000);
+        } catch(ex) {
+            console.error("Erro no upload de atualização:", ex);
+            counter.innerText = "Erro ao salvar na nuvem.";
+        }
+    }
 
     function debounceSave() {
         clearTimeout(debounceTimer);
@@ -740,11 +741,19 @@
         const file = e.target.files[0];
         if (!file) return;
 
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const fileName = `doc_${Date.now()}.docx`;
+        try {
+            document.getElementById("counterText").innerText = "Enviando arquivo...";
+            await _supabase.storage.from(BUCKET).upload(fileName, file);
+            localStorage.setItem("lastFileName", fileName);
+        } catch(ex) {
+            console.error("Erro no upload:", ex);
+        }
+
         const reader = new FileReader();
-        reader.onload = async (ev) => {
-            await processDoc(ev.target.result);
-            // Após processar o .docx, salva o HTML gerado como arquivo de sincronização
-            await uploadHtmlToSupabase(docHtml);
+        reader.onload = ev => {
+            processDoc(ev.target.result);
         };
         reader.readAsArrayBuffer(file);
     };
@@ -768,14 +777,14 @@
         // Cria a linha com a classe 'custom-row' para os botões não sumirem
         newTable.innerHTML = `
             <tr class="has-match custom-row editing-mode">
-                <td style="width: 60%; border: 1px solid #333; padding: 8px; color: #fff; background-color: #262626; outline: 1px solid #eab308;" contenteditable="true">Inserir Nome...<\/td>
-                <td style="width: 20%; border: 1px solid #333; padding: 8px; color: #fff; text-align: center; background-color: #262626; outline: 1px solid #eab308;" contenteditable="true">Info...<\/td>
+                <td style="width: 60%; border: 1px solid #333; padding: 8px; color: #fff; background-color: #262626; outline: 1px solid #eab308;" contenteditable="true">Inserir Nome...</td>
+                <td style="width: 20%; border: 1px solid #333; padding: 8px; color: #fff; text-align: center; background-color: #262626; outline: 1px solid #eab308;" contenteditable="true">Info...</td>
                 <td class="desktop-actions" style="width: 20%; border: 1px solid #333; padding: 8px; text-align: center;" contenteditable="false">
-                    <button class="action-btn btn-edit" style="display:none;" onclick="toggleEditRow(this)">EDITAR<\/button>
-                    <button class="action-btn btn-save-row" style="display:inline-block;" onclick="toggleEditRow(this)">SALVAR<\/button>
-                    <button class="action-btn btn-delete" onclick="deleteCustomRow(this)">EXCLUIR<\/button>
-                <\/td>
-             <\/tr>
+                    <button class="action-btn btn-edit" style="display:none;" onclick="toggleEditRow(this)">EDITAR</button>
+                    <button class="action-btn btn-save-row" style="display:inline-block;" onclick="toggleEditRow(this)">SALVAR</button>
+                    <button class="action-btn btn-delete" onclick="deleteCustomRow(this)">EXCLUIR</button>
+                </td>
+            </tr>
         `;
 
         viewer.insertBefore(newTable, viewer.firstChild);
