@@ -579,9 +579,16 @@
     }
 
     // Nova função: acionar o upload de um novo arquivo (trocar arquivo)
-    function triggerFileUpload() {
-        document.getElementById("fileInput").click();
+   function triggerFileUpload() {
+    const senha = prompt("Digite a senha para trocar o arquivo:");
+    if (senha !== PASSWORD) {
+        alert("Senha incorreta.");
+        return;
     }
+    setTimeout(() => {
+        document.getElementById("fileInput").click();
+    }, 100);
+}
 
     async function processDoc(buf) {
         document.getElementById("uploadArea").style.display = "none";
