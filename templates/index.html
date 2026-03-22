@@ -1054,7 +1054,7 @@
             voiceTimeout = setTimeout(() => {
                 try { rec.stop(); } catch(e) {}
                 vBtn.classList.remove("recording");
-            }, 5000);
+            }, 3000);
         };
         
         rec.onresult = e => {
