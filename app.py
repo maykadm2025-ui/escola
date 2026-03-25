@@ -65,6 +65,60 @@ def _cron_title(target_url):
     return f"{CRON_TITLE_PREFIX} - {host}"
 
 
+def _normalize_job_url(url):
+    parsed = urlparse((url or "").strip())
+    scheme = (parsed.scheme or "https").lower()
+    host = (parsed.netloc or "").lower()
+    path = parsed.path or "/"
+    return scheme, host, path
+
+
+def _is_legacy_root_job(job, target_url):
+    target_scheme, target_host, _ = _normalize_job_url(target_url)
+    job_scheme, job_host, job_path = _normalize_job_url(job.get("url"))
+    if job_host != target_host:
+        return False
+    if job_scheme != target_scheme:
+        return False
+    return job_path in {"", "/"}
+
+
+def _is_same_site_job(job, target_url):
+    target_scheme, target_host, _ = _normalize_job_url(target_url)
+    job_scheme, job_host, _ = _normalize_job_url(job.get("url"))
+    return job_host == target_host and job_scheme == target_scheme
+
+
+def _is_managed_job(job, target_url):
+    if job.get("url") == target_url:
+        return True
+    if _is_legacy_root_job(job, target_url):
+        return True
+    title = (job.get("title") or "").strip()
+    return _is_same_site_job(job, target_url) and title.startswith(CRON_TITLE_PREFIX)
+
+
+def _collect_managed_jobs(jobs, target_url):
+    return [job for job in jobs if _is_managed_job(job, target_url)]
+
+
+def _select_primary_job(jobs, target_url):
+    title = _cron_title(target_url)
+    for job in jobs:
+        if job.get("url") == target_url and job.get("title") == title:
+            return job
+    for job in jobs:
+        if job.get("url") == target_url:
+            return job
+    for job in jobs:
+        if job.get("title") == title:
+            return job
+    for job in jobs:
+        if _is_legacy_root_job(job, target_url):
+            return job
+    return jobs[0] if jobs else None
+
+
 def _cron_payload(target_url):
     return {
         "job": {
@@ -96,14 +150,7 @@ def _cron_headers():
 
 
 def _find_existing_job(jobs, target_url):
-    title = _cron_title(target_url)
-    for job in jobs:
-        if job.get("url") == target_url:
-            return job
-    for job in jobs:
-        if job.get("title") == title:
-            return job
-    return None
+    return _select_primary_job(_collect_managed_jobs(jobs, target_url), target_url)
 
 
 def _format_request_error(exc):
@@ -135,7 +182,8 @@ def _configure_cron_job(base_url):
         )
         list_response.raise_for_status()
         jobs = list_response.json().get("jobs", [])
-        existing_job = _find_existing_job(jobs, target_url)
+        managed_jobs = _collect_managed_jobs(jobs, target_url)
+        existing_job = _select_primary_job(managed_jobs, target_url)
         payload = _cron_payload(target_url)
 
         if existing_job:
@@ -158,6 +206,18 @@ def _configure_cron_job(base_url):
             create_response.raise_for_status()
             job_id = create_response.json().get("jobId")
             status = "created"
+
+        for job in managed_jobs:
+            duplicate_job_id = job.get("jobId")
+            if duplicate_job_id == job_id:
+                continue
+            disable_response = requests.patch(
+                f"{CRON_API_BASE}/jobs/{duplicate_job_id}",
+                headers=_cron_headers(),
+                json={"job": {"enabled": False}},
+                timeout=15,
+            )
+            disable_response.raise_for_status()
 
         _update_cron_state(
             status=status,
