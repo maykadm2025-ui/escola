@@ -65,6 +65,32 @@ def _cron_title(target_url):
     return f"{CRON_TITLE_PREFIX} - {host}"
 
 
+def _cron_schedule(hours, minutes):
+    return {
+        "timezone": CRON_TIMEZONE,
+        "expiresAt": 0,
+        "hours": hours,
+        "mdays": [-1],
+        "minutes": minutes,
+        "months": [-1],
+        "wdays": [1, 2, 3, 4, 5],
+    }
+
+
+def _cron_job_definitions(target_url):
+    base_title = _cron_title(target_url)
+    return [
+        {
+            "title": f"{base_title} - seg-sex 07h-21h59",
+            "schedule": _cron_schedule(list(range(7, 22)), [-1]),
+        },
+        {
+            "title": f"{base_title} - seg-sex 22h00",
+            "schedule": _cron_schedule([22], [0]),
+        },
+    ]
+
+
 def _normalize_job_url(url):
     parsed = urlparse((url or "").strip())
     scheme = (parsed.scheme or "https").lower()
@@ -102,16 +128,16 @@ def _collect_managed_jobs(jobs, target_url):
     return [job for job in jobs if _is_managed_job(job, target_url)]
 
 
-def _select_primary_job(jobs, target_url):
-    title = _cron_title(target_url)
+def _select_job_for_definition(jobs, target_url, definition):
+    title = definition["title"]
     for job in jobs:
         if job.get("url") == target_url and job.get("title") == title:
             return job
     for job in jobs:
-        if job.get("url") == target_url:
+        if job.get("title") == title:
             return job
     for job in jobs:
-        if job.get("title") == title:
+        if job.get("url") == target_url:
             return job
     for job in jobs:
         if _is_legacy_root_job(job, target_url):
@@ -119,25 +145,17 @@ def _select_primary_job(jobs, target_url):
     return jobs[0] if jobs else None
 
 
-def _cron_payload(target_url):
+def _cron_payload(target_url, definition):
     return {
         "job": {
             "enabled": True,
-            "title": _cron_title(target_url),
+            "title": definition["title"],
             "url": target_url,
             "saveResponses": False,
             "requestMethod": 3,
             "requestTimeout": 30,
             "redirectSuccess": False,
-            "schedule": {
-                "timezone": CRON_TIMEZONE,
-                "expiresAt": 0,
-                "hours": [-1],
-                "mdays": [-1],
-                "minutes": [-1],
-                "months": [-1],
-                "wdays": [-1],
-            },
+            "schedule": definition["schedule"],
         }
     }
 
@@ -147,10 +165,6 @@ def _cron_headers():
         "Authorization": f"Bearer {CRON_JOB_API_KEY}",
         "Content-Type": "application/json",
     }
-
-
-def _find_existing_job(jobs, target_url):
-    return _select_primary_job(_collect_managed_jobs(jobs, target_url), target_url)
 
 
 def _format_request_error(exc):
@@ -183,33 +197,40 @@ def _configure_cron_job(base_url):
         list_response.raise_for_status()
         jobs = list_response.json().get("jobs", [])
         managed_jobs = _collect_managed_jobs(jobs, target_url)
-        existing_job = _select_primary_job(managed_jobs, target_url)
-        payload = _cron_payload(target_url)
+        remaining_jobs = managed_jobs[:]
+        configured_job_ids = []
+        configured_count = 0
 
-        if existing_job:
-            job_id = existing_job["jobId"]
-            save_response = requests.patch(
-                f"{CRON_API_BASE}/jobs/{job_id}",
-                headers=_cron_headers(),
-                json=payload,
-                timeout=15,
-            )
-            save_response.raise_for_status()
-            status = "updated"
-        else:
-            create_response = requests.put(
-                f"{CRON_API_BASE}/jobs",
-                headers=_cron_headers(),
-                json=payload,
-                timeout=15,
-            )
-            create_response.raise_for_status()
-            job_id = create_response.json().get("jobId")
-            status = "created"
+        for definition in _cron_job_definitions(target_url):
+            existing_job = _select_job_for_definition(remaining_jobs, target_url, definition)
+            payload = _cron_payload(target_url, definition)
 
-        for job in managed_jobs:
+            if existing_job:
+                job_id = existing_job["jobId"]
+                save_response = requests.patch(
+                    f"{CRON_API_BASE}/jobs/{job_id}",
+                    headers=_cron_headers(),
+                    json=payload,
+                    timeout=15,
+                )
+                save_response.raise_for_status()
+                remaining_jobs = [job for job in remaining_jobs if job.get("jobId") != job_id]
+            else:
+                create_response = requests.put(
+                    f"{CRON_API_BASE}/jobs",
+                    headers=_cron_headers(),
+                    json=payload,
+                    timeout=15,
+                )
+                create_response.raise_for_status()
+                job_id = create_response.json().get("jobId")
+
+            configured_job_ids.append(job_id)
+            configured_count += 1
+
+        for job in remaining_jobs:
             duplicate_job_id = job.get("jobId")
-            if duplicate_job_id == job_id:
+            if duplicate_job_id in configured_job_ids:
                 continue
             disable_response = requests.patch(
                 f"{CRON_API_BASE}/jobs/{duplicate_job_id}",
@@ -220,12 +241,17 @@ def _configure_cron_job(base_url):
             disable_response.raise_for_status()
 
         _update_cron_state(
-            status=status,
+            status="updated",
             target_url=target_url,
-            job_id=job_id,
+            job_id=configured_job_ids[0] if configured_job_ids else None,
             last_error="",
         )
-        app.logger.info("cron-job.org %s for %s (job_id=%s)", status, target_url, job_id)
+        app.logger.info(
+            "cron-job.org configured %s jobs for %s (job_ids=%s)",
+            configured_count,
+            target_url,
+            configured_job_ids,
+        )
     except requests.RequestException as exc:
         error_message = _format_request_error(exc)
         _update_cron_state(status="error", target_url=target_url, job_id=None, last_error=error_message)
